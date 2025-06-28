@@ -302,6 +302,37 @@ class SlotCanyonScene extends Phaser.Scene {
         }
     }
 
+    sonicSlide() {
+        this.canSonicSlide = false;
+        // Visual effect for sonic slide
+        const graphics = this.add.graphics();
+        graphics.lineStyle(2, 0xFFFFFF, 1);
+        graphics.strokeCircle(this.player.x, this.player.y, 50);
+        this.time.delayedCall(200, () => {
+            graphics.destroy();
+        }, [], this);
+
+        // Knockback effect on enemies
+        const knockbackRadius = 100;
+        const knockbackForce = 300;
+
+        this.zomboids.children.each(zomboid => {
+            if (zomboid.active && Phaser.Math.Distance.Between(this.player.x, this.player.y, zomboid.x, zomboid.y) < knockbackRadius) {
+                this.physics.moveToObject(zomboid, this.player, -knockbackForce);
+            }
+        });
+
+        this.droneBots.children.each(droneBot => {
+            if (droneBot.active && Phaser.Math.Distance.Between(this.player.x, this.player.y, droneBot.x, droneBot.y) < knockbackRadius) {
+                this.physics.moveToObject(droneBot, this.player, -knockbackForce);
+            }
+        });
+
+        this.time.delayedCall(this.sonicSlideCooldown, () => {
+            this.canSonicSlide = true;
+        }, [], this);
+    }
+
     nextLevel() {
         this.currentLevel += 1;
         this.collectedVinyls = 0;
