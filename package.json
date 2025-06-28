@@ -5,11 +5,14 @@
   "main": "js/main.js",
   "scripts": {
     "start": "live-server",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node test.js"
   },
   "author": "Nomadic Practice",
   "license": "ISC",
   "dependencies": {
     "live-server": "^1.2.2"
+  },
+  "devDependencies": {
+    "puppeteer": "^22.0.0"
   }
 }
