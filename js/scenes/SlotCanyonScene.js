@@ -63,6 +63,14 @@ class SlotCanyonScene extends Phaser.Scene {
         canvas.refresh();
     }
 
+    createDroneBotTexture() {
+        let canvas = this.textures.createCanvas('droneBot', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#000000'; // Black
+        ctx.fillRect(0, 0, 32, 32);
+        canvas.refresh();
+    }
+
     create() {
         // Create textures
         this.createPlayerTexture();
@@ -72,6 +80,7 @@ class SlotCanyonScene extends Phaser.Scene {
         this.createBeerMugTexture();
         this.createTempoTonicTexture();
         this.createMysteryTapeTexture();
+        this.createDroneBotTexture();
 
         // Player
         this.player = this.physics.add.sprite(400, 300, 'player');
@@ -114,6 +123,20 @@ class SlotCanyonScene extends Phaser.Scene {
             runChildUpdate: true
         });
 
+        // Mystery Tapes
+        this.mysteryTapes = this.physics.add.group({
+            classType: MysteryTape,
+            maxSize: 5,
+            runChildUpdate: true
+        });
+
+        // Drone Bots
+        this.droneBots = this.physics.add.group({
+            classType: DroneBot,
+            maxSize: 10,
+            runChildUpdate: true
+        });
+
         // Player Health
         this.playerHealth = 3;
         this.healthText = this.add.text(16, 16, 'Health: ' + this.playerHealth, { fontSize: '32px', fill: '#fff' });
@@ -133,6 +156,10 @@ class SlotCanyonScene extends Phaser.Scene {
         this.playerZomboidCollider = this.physics.add.collider(this.player, this.zomboids, this.playerHit, null, this);
         this.physics.add.overlap(this.player, this.beerMugs, this.collectBeerMug, null, this);
         this.physics.add.overlap(this.player, this.tempoTonics, this.collectTempoTonic, null, this);
+        this.physics.add.overlap(this.player, this.mysteryTapes, this.collectMysteryTape, null, this);
+        this.physics.add.collider(this.projectiles, this.droneBots, this.hitDroneBot, null, this);
+        this.physics.add.collider(this.player, this.droneBots, this.playerHit, null, this);
+
 
         // Spawn zomboids
         this.time.addEvent({
@@ -155,6 +182,27 @@ class SlotCanyonScene extends Phaser.Scene {
             callbackScope: this,
             loop: true
         });
+
+        this.time.addEvent({
+            delay: 10000,
+            callback: this.spawnDroneBot,
+            callbackScope: this,
+            loop: true
+        });
+    }
+
+    hitDroneBot(projectile, droneBot) {
+        projectile.setActive(false);
+        projectile.setVisible(false);
+        droneBot.setActive(false);
+        droneBot.setVisible(false);
+    }
+
+    spawnDroneBot() {
+        const droneBot = this.droneBots.get();
+        if (droneBot) {
+            droneBot.spawn(800, Phaser.Math.Between(100, 500));
+        }
     }
 
     update() {
