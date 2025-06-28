@@ -2,7 +2,7 @@
 
 This document outlines the multi-phase development plan for the "Nomadic Practice: Groove Apocalypse" game.
 
-## Phase 1: Core Mechanics & Basic Playable Prototype (Current)
+## Phase 1: Core Mechanics & Basic Playable Prototype (Completed)
 
 **Goal:** Establish a minimal viable game loop with core mechanics.
 
@@ -23,13 +23,15 @@ This document outlines the multi-phase development plan for the "Nomadic Practic
 **Goal:** Expand on core mechanics, introduce more game elements, and improve the player experience.
 
 **Features:**
-*   **Procedural Level Generation (V1):** Implement a simple random dungeon generation for the slot canyon levels.
-*   **Player Health System:** Replace the instant game over with a beer mug health meter.
-*   **Power-ups:** Implement Tempo Tonic (speed boost) and Mystery Tape (invincibility).
-*   **Enemy Variety:** Introduce Drone Bots (from Level 3+).
-*   **Basic UI Enhancements:** Display health, power-up status.
-*   **Win Condition:** Implement collecting X vinyls to unlock the exit.
-*   **Level Progression:** Transition between levels with increasing difficulty.
+*   **Procedural Level Generation (V1):** Simple tile-based random maze generation.
+*   **Player Health System:** Max health: 3 (represented by beer mugs). Beer Mug power-up: restores 1 health.
+*   **Power-ups:**
+    *   **Tempo Tonic:** 5 seconds duration, +50% speed.
+    *   **Mystery Tape:** 10 seconds duration, invincibility.
+*   **Enemy Variety (Drone Bots):** Follow a path, move towards the player when within a 3-block range. Slower movement speed than the player. Silence projectiles will be visually distinct (e.g., black squares) and deal damage.
+*   **Win Condition & Level Progression:** Collect 3 vinyls for level 1, 5 for level 2, 7 for level 3. Game has a fixed number of 3 levels.
+*   **Elliot's Special Attack (Sonic Slide):** Implement in Phase 2. (Default cooldown/range/effect will be implemented).
+*   **"Convert Zomboids to Happy Dancers":** Happy Dancers despawn after 3 seconds.
 
 **Deliverable:** A game with multiple levels, varied enemies, and power-ups.
 

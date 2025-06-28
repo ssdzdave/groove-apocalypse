@@ -3,12 +3,57 @@ class SlotCanyonScene extends Phaser.Scene {
         super({ key: 'SlotCanyonScene' });
     }
 
+    createPlayerTexture() {
+        let canvas = this.textures.createCanvas('player', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#0000FF'; // Blue
+        ctx.fillRect(0, 0, 32, 32);
+        canvas.refresh();
+    }
+
+    createZomboidTexture() {
+        let canvas = this.textures.createCanvas('zomboid', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#808080'; // Gray
+        ctx.fillRect(0, 0, 32, 32);
+        canvas.refresh();
+    }
+
+    createVinylTexture() {
+        let canvas = this.textures.createCanvas('vinyl', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFF00'; // Yellow
+        ctx.beginPath();
+        ctx.arc(16, 16, 16, 0, Math.PI * 2, true);
+        ctx.closePath();
+        ctx.fill();
+        canvas.refresh();
+    }
+
+    createProjectileTexture() {
+        let canvas = this.textures.createCanvas('projectile', 16, 16);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF'; // White
+        ctx.fillRect(0, 0, 16, 16);
+        canvas.refresh();
+    }
+
+    createBeerMugTexture() {
+        let canvas = this.textures.createCanvas('beerMug', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFA500'; // Orange
+        ctx.fillRect(8, 0, 16, 32);
+        ctx.fillRect(0, 24, 32, 8);
+        canvas.refresh();
+    }
+
     create() {
         // Create textures
         this.createPlayerTexture();
         this.createZomboidTexture();
         this.createVinylTexture();
         this.createProjectileTexture();
+        this.createBeerMugTexture();
 
         // Player
         this.player = this.physics.add.sprite(400, 300, 'player');
@@ -111,8 +156,23 @@ class SlotCanyonScene extends Phaser.Scene {
     }
 
     playerHit(player, zomboid) {
-        this.physics.pause();
-        this.player.setTint(0xff0000);
+        zomboid.disableBody(true, true);
+        this.playerHealth -= 1;
+        this.healthText.setText('Health: ' + this.playerHealth);
+
+        if (this.playerHealth <= 0) {
+            this.physics.pause();
+            this.player.setTint(0xff0000);
+            this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, 'GAME OVER', { fontSize: '64px', fill: '#ff0000' }).setOrigin(0.5);
+        }
+    }
+
+    collectBeerMug(player, beerMug) {
+        beerMug.disableBody(true, true);
+        if (this.playerHealth < 3) {
+            this.playerHealth += 1;
+            this.healthText.setText('Health: ' + this.playerHealth);
+        }
     }
 
     createPlayerTexture() {
