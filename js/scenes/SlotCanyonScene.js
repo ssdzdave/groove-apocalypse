@@ -252,8 +252,12 @@ class SlotCanyonScene extends Phaser.Scene {
     hitZomboid(projectile, zomboid) {
         projectile.setActive(false);
         projectile.setVisible(false);
-        zomboid.setActive(false);
-        zomboid.setVisible(false);
+
+        zomboid.setTexture('happyDancer');
+        zomboid.setVelocity(0);
+        this.time.delayedCall(3000, () => {
+            zomboid.disableBody(true, true);
+        }, [], this);
     }
 
     playerHit(player, zomboid) {
