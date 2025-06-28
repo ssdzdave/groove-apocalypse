@@ -297,4 +297,50 @@ class SlotCanyonScene extends Phaser.Scene {
             tempoTonic.spawn(800, Phaser.Math.Between(100, 500));
         }
     }
+
+    nextLevel() {
+        this.currentLevel += 1;
+        this.collectedVinyls = 0;
+
+        if (this.currentLevel > 3) {
+            this.physics.pause();
+            this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, 'YOU WIN!', { fontSize: '64px', fill: '#00FF00' }).setOrigin(0.5);
+            return;
+        }
+
+        // Update vinyls to collect
+        if (this.currentLevel === 2) {
+            this.vinylsToCollect = 5;
+        } else if (this.currentLevel === 3) {
+            this.vinylsToCollect = 7;
+        }
+
+        this.levelText.setText('Level: ' + this.currentLevel);
+        this.scoreText.setText('Vinyls: ' + this.collectedVinyls + ' / ' + this.vinylsToCollect);
+
+        // Clear existing entities
+        this.zomboids.clear(true, true);
+        this.beerMugs.clear(true, true);
+        this.tempoTonics.clear(true, true);
+        this.mysteryTapes.clear(true, true);
+        this.projectiles.clear(true, true);
+        this.vinyls.clear(true, true);
+
+        // Respawn vinyls for the new level
+        this.spawnVinyls();
+
+        // Adjust enemy spawn rates/types (simplified for now)
+        if (this.currentLevel >= 2) {
+            // Increase zomboid spawn rate or quantity
+        }
+        if (this.currentLevel >= 3) {
+            // Introduce Drone Bots more frequently
+        }
+    }
+
+    spawnVinyls() {
+        for (let i = 0; i < this.vinylsToCollect; i++) {
+            this.vinyls.create(Phaser.Math.Between(50, 750), Phaser.Math.Between(100, 550), 'vinyl');
+        }
+    }
 }
