@@ -55,6 +55,14 @@ class SlotCanyonScene extends Phaser.Scene {
         canvas.refresh();
     }
 
+    createMysteryTapeTexture() {
+        let canvas = this.textures.createCanvas('mysteryTape', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FF00FF'; // Magenta
+        ctx.fillRect(0, 0, 32, 32);
+        canvas.refresh();
+    }
+
     create() {
         // Create textures
         this.createPlayerTexture();
@@ -63,6 +71,7 @@ class SlotCanyonScene extends Phaser.Scene {
         this.createProjectileTexture();
         this.createBeerMugTexture();
         this.createTempoTonicTexture();
+        this.createMysteryTapeTexture();
 
         // Player
         this.player = this.physics.add.sprite(400, 300, 'player');
@@ -121,7 +130,7 @@ class SlotCanyonScene extends Phaser.Scene {
 
         this.physics.add.overlap(this.player, this.vinyls, this.collectVinyl, null, this);
         this.physics.add.collider(this.projectiles, this.zomboids, this.hitZomboid, null, this);
-        this.physics.add.collider(this.player, this.zomboids, this.playerHit, null, this);
+        this.playerZomboidCollider = this.physics.add.collider(this.player, this.zomboids, this.playerHit, null, this);
         this.physics.add.overlap(this.player, this.beerMugs, this.collectBeerMug, null, this);
         this.physics.add.overlap(this.player, this.tempoTonics, this.collectTempoTonic, null, this);
 
