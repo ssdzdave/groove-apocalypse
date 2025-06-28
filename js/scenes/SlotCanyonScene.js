@@ -3,15 +3,13 @@ class SlotCanyonScene extends Phaser.Scene {
         super({ key: 'SlotCanyonScene' });
     }
 
-    preload() {
-        // Placeholders for assets
-        this.load.image('player', 'assets/player.png');
-        this.load.image('zomboid', 'assets/zomboid.png');
-        this.load.image('vinyl', 'assets/vinyl.png');
-        this.load.image('projectile', 'assets/projectile.png');
-    }
-
     create() {
+        // Create textures
+        this.createPlayerTexture();
+        this.createZomboidTexture();
+        this.createVinylTexture();
+        this.createProjectileTexture();
+
         // Player
         this.player = this.physics.add.sprite(400, 300, 'player');
         this.player.setCollideWorldBounds(true);
@@ -39,11 +37,10 @@ class SlotCanyonScene extends Phaser.Scene {
         this.scoreText = this.add.text(16, 16, 'Vinyls: 0', { fontSize: '32px', fill: '#fff' });
 
         // Vinyls
-        this.vinyls = this.physics.add.group({
-            key: 'vinyl',
-            repeat: 5,
-            setXY: { x: 12, y: 0, stepX: 140 }
-        });
+        this.vinyls = this.physics.add.group();
+        for (let i = 0; i < 5; i++) {
+            this.vinyls.create(12 + i * 140, 50, 'vinyl');
+        }
 
         this.physics.add.overlap(this.player, this.vinyls, this.collectVinyl, null, this);
         this.physics.add.collider(this.projectiles, this.zomboids, this.hitZomboid, null, this);
@@ -60,17 +57,17 @@ class SlotCanyonScene extends Phaser.Scene {
 
     update() {
         // Player movement
-        if (this.cursors.left.isDown) {
+        if (this.cursors.left.isDown || this.keyA.isDown) {
             this.player.setVelocityX(-160);
-        } else if (this.cursors.right.isDown) {
+        } else if (this.cursors.right.isDown || this.keyD.isDown) {
             this.player.setVelocityX(160);
         } else {
             this.player.setVelocityX(0);
         }
 
-        if (this.cursors.up.isDown) {
+        if (this.cursors.up.isDown || this.keyW.isDown) {
             this.player.setVelocityY(-160);
-        } else if (this.cursors.down.isDown) {
+        } else if (this.cursors.down.isDown || this.keyS.isDown) {
             this.player.setVelocityY(160);
         } else {
             this.player.setVelocityY(0);
@@ -112,5 +109,40 @@ class SlotCanyonScene extends Phaser.Scene {
     playerHit(player, zomboid) {
         this.physics.pause();
         this.player.setTint(0xff0000);
+    }
+
+    createPlayerTexture() {
+        let canvas = this.textures.createCanvas('player', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#0000FF'; // Blue
+        ctx.fillRect(0, 0, 32, 32);
+        canvas.refresh();
+    }
+
+    createZomboidTexture() {
+        let canvas = this.textures.createCanvas('zomboid', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#808080'; // Gray
+        ctx.fillRect(0, 0, 32, 32);
+        canvas.refresh();
+    }
+
+    createVinylTexture() {
+        let canvas = this.textures.createCanvas('vinyl', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFF00'; // Yellow
+        ctx.beginPath();
+        ctx.arc(16, 16, 16, 0, Math.PI * 2, true);
+        ctx.closePath();
+        ctx.fill();
+        canvas.refresh();
+    }
+
+    createProjectileTexture() {
+        let canvas = this.textures.createCanvas('projectile', 16, 16);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF'; // White
+        ctx.fillRect(0, 0, 16, 16);
+        canvas.refresh();
     }
 }
