@@ -71,6 +71,22 @@ class SlotCanyonScene extends Phaser.Scene {
         canvas.refresh();
     }
 
+    createHappyDancerTexture() {
+        let canvas = this.textures.createCanvas('happyDancer', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#00FF00'; // Green
+        ctx.fillRect(0, 0, 32, 32);
+        canvas.refresh();
+    }
+
+    createWallTexture() {
+        let canvas = this.textures.createCanvas('wall', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#8B4513'; // SaddleBrown
+        ctx.fillRect(0, 0, 32, 32);
+        canvas.refresh();
+    }
+
     create() {
         // Create textures
         this.createPlayerTexture();
@@ -81,9 +97,18 @@ class SlotCanyonScene extends Phaser.Scene {
         this.createTempoTonicTexture();
         this.createMysteryTapeTexture();
         this.createDroneBotTexture();
+        this.createHappyDancerTexture();
+        this.createWallTexture();
+
+        // Level Generation
+        this.tileSize = 32;
+        this.levelWidth = Math.floor(this.game.config.width / this.tileSize);
+        this.levelHeight = Math.floor(this.game.config.height / this.tileSize);
+        this.levelGenerator = new LevelGenerator(this, this.levelWidth, this.levelHeight, this.tileSize);
+        this.walls = this.physics.add.staticGroup();
 
         // Player
-        this.player = this.physics.add.sprite(400, 300, 'player');
+        this.player = this.physics.add.sprite(0, 0, 'player'); // Initial position will be set by level generation
         this.player.setCollideWorldBounds(true);
         this.playerSpeed = 160; // Initial player speed
 
@@ -94,6 +119,10 @@ class SlotCanyonScene extends Phaser.Scene {
         this.keyS = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
         this.keyA = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
         this.keyD = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+        this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+
+        this.canSonicSlide = true;
+        this.sonicSlideCooldown = 3000; // 3 seconds cooldown
 
         // Projectiles
         this.projectiles = this.physics.add.group({
@@ -141,15 +170,15 @@ class SlotCanyonScene extends Phaser.Scene {
         this.playerHealth = 3;
         this.healthText = this.add.text(16, 16, 'Health: ' + this.playerHealth, { fontSize: '32px', fill: '#fff' });
 
-        // Score
-        this.score = 0;
-        this.scoreText = this.add.text(16, 50, 'Vinyls: 0', { fontSize: '32px', fill: '#fff' });
+        // Level and Score
+        this.currentLevel = 1;
+        this.vinylsToCollect = 3; // For Level 1
+        this.collectedVinyls = 0;
+        this.levelText = this.add.text(16, 50, 'Level: ' + this.currentLevel, { fontSize: '32px', fill: '#fff' });
+        this.scoreText = this.add.text(16, 84, 'Vinyls: ' + this.collectedVinyls + ' / ' + this.vinylsToCollect, { fontSize: '32px', fill: '#fff' });
 
         // Vinyls
         this.vinyls = this.physics.add.group();
-        for (let i = 0; i < 5; i++) {
-            this.vinyls.create(12 + i * 140, 50, 'vinyl');
-        }
 
         this.physics.add.overlap(this.player, this.vinyls, this.collectVinyl, null, this);
         this.physics.add.collider(this.projectiles, this.zomboids, this.hitZomboid, null, this);
@@ -159,6 +188,9 @@ class SlotCanyonScene extends Phaser.Scene {
         this.physics.add.overlap(this.player, this.mysteryTapes, this.collectMysteryTape, null, this);
         this.physics.add.collider(this.projectiles, this.droneBots, this.hitDroneBot, null, this);
         this.physics.add.collider(this.player, this.droneBots, this.playerHit, null, this);
+        this.physics.add.collider(this.player, this.walls);
+        this.physics.add.collider(this.zomboids, this.walls);
+        this.physics.add.collider(this.droneBots, this.walls);
 
 
         // Spawn zomboids
@@ -189,6 +221,8 @@ class SlotCanyonScene extends Phaser.Scene {
             callbackScope: this,
             loop: true
         });
+
+        this.generateLevel();
     }
 
     hitDroneBot(projectile, droneBot) {
@@ -201,7 +235,8 @@ class SlotCanyonScene extends Phaser.Scene {
     spawnDroneBot() {
         const droneBot = this.droneBots.get();
         if (droneBot) {
-            droneBot.spawn(800, Phaser.Math.Between(100, 500));
+            const spawnPos = this.getRandomPathPosition();
+            droneBot.spawn(spawnPos.x, spawnPos.y);
         }
     }
 
@@ -227,12 +262,21 @@ class SlotCanyonScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this.spacebar)) {
             this.shootProjectile();
         }
+
+        // Special Attack
+        if (Phaser.Input.Keyboard.JustDown(this.keyE) && this.canSonicSlide) {
+            this.sonicSlide();
+        }
     }
 
     collectVinyl(player, vinyl) {
         vinyl.disableBody(true, true);
-        this.score += 1;
-        this.scoreText.setText('Vinyls: ' + this.score);
+        this.collectedVinyls += 1;
+        this.scoreText.setText('Vinyls: ' + this.collectedVinyls + ' / ' + this.vinylsToCollect);
+
+        if (this.collectedVinyls >= this.vinylsToCollect) {
+            this.nextLevel();
+        }
     }
 
     shootProjectile() {
@@ -245,7 +289,8 @@ class SlotCanyonScene extends Phaser.Scene {
     spawnZomboid() {
         const zomboid = this.zomboids.get();
         if (zomboid) {
-            zomboid.spawn(800, Phaser.Math.Between(100, 500));
+            const spawnPos = this.getRandomPathPosition();
+            zomboid.spawn(spawnPos.x, spawnPos.y);
         }
     }
 
@@ -291,14 +336,16 @@ class SlotCanyonScene extends Phaser.Scene {
     spawnBeerMug() {
         const beerMug = this.beerMugs.get();
         if (beerMug) {
-            beerMug.spawn(800, Phaser.Math.Between(100, 500));
+            const spawnPos = this.getRandomPathPosition();
+            beerMug.spawn(spawnPos.x, spawnPos.y);
         }
     }
 
     spawnTempoTonic() {
         const tempoTonic = this.tempoTonics.get();
         if (tempoTonic) {
-            tempoTonic.spawn(800, Phaser.Math.Between(100, 500));
+            const spawnPos = this.getRandomPathPosition();
+            tempoTonic.spawn(spawnPos.x, spawnPos.y);
         }
     }
 
@@ -360,9 +407,10 @@ class SlotCanyonScene extends Phaser.Scene {
         this.mysteryTapes.clear(true, true);
         this.projectiles.clear(true, true);
         this.vinyls.clear(true, true);
+        this.walls.clear(true, true);
 
-        // Respawn vinyls for the new level
-        this.spawnVinyls();
+        // Generate new level
+        this.generateLevel();
 
         // Adjust enemy spawn rates/types (simplified for now)
         if (this.currentLevel >= 2) {
@@ -373,9 +421,33 @@ class SlotCanyonScene extends Phaser.Scene {
         }
     }
 
-    spawnVinyls() {
-        for (let i = 0; i < this.vinylsToCollect; i++) {
-            this.vinyls.create(Phaser.Math.Between(50, 750), Phaser.Math.Between(100, 550), 'vinyl');
+    generateLevel() {
+        const levelGrid = this.levelGenerator.generateLevel();
+        for (let y = 0; y < this.levelHeight; y++) {
+            for (let x = 0; x < this.levelWidth; x++) {
+                if (levelGrid[y][x] === 1) {
+                    this.walls.create(x * this.tileSize + this.tileSize / 2, y * this.tileSize + this.tileSize / 2, 'wall');
+                }
+            }
         }
+
+        // Place player
+        const playerSpawn = this.levelGenerator.getSpawnPosition();
+        this.player.setPosition(playerSpawn.x, playerSpawn.y);
+
+        // Place vinyls
+        const vinylPositions = this.levelGenerator.getVinylPositions(this.vinylsToCollect);
+        vinylPositions.forEach(pos => {
+            this.vinyls.create(pos.x, pos.y, 'vinyl');
+        });
+    }
+
+    getRandomPathPosition() {
+        let spawnX, spawnY;
+        do {
+            spawnX = Phaser.Math.Between(1, this.levelWidth - 2);
+            spawnY = Phaser.Math.Between(1, this.levelHeight - 2);
+        } while (this.levelGenerator.grid[spawnY][spawnX] !== 0);
+        return { x: spawnX * this.tileSize + this.tileSize / 2, y: spawnY * this.tileSize + this.tileSize / 2 };
     }
 }
