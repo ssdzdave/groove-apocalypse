@@ -47,6 +47,14 @@ class SlotCanyonScene extends Phaser.Scene {
         canvas.refresh();
     }
 
+    createTempoTonicTexture() {
+        let canvas = this.textures.createCanvas('tempoTonic', 32, 32);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#00FFFF'; // Cyan
+        ctx.fillRect(0, 0, 32, 32);
+        canvas.refresh();
+    }
+
     create() {
         // Create textures
         this.createPlayerTexture();
@@ -54,10 +62,12 @@ class SlotCanyonScene extends Phaser.Scene {
         this.createVinylTexture();
         this.createProjectileTexture();
         this.createBeerMugTexture();
+        this.createTempoTonicTexture();
 
         // Player
         this.player = this.physics.add.sprite(400, 300, 'player');
         this.player.setCollideWorldBounds(true);
+        this.playerSpeed = 160; // Initial player speed
 
         // Cursors
         this.cursors = this.input.keyboard.createCursorKeys();
@@ -81,9 +91,27 @@ class SlotCanyonScene extends Phaser.Scene {
             runChildUpdate: true
         });
 
+        // Beer Mugs
+        this.beerMugs = this.physics.add.group({
+            classType: BeerMug,
+            maxSize: 5,
+            runChildUpdate: true
+        });
+
+        // Tempo Tonics
+        this.tempoTonics = this.physics.add.group({
+            classType: TempoTonic,
+            maxSize: 5,
+            runChildUpdate: true
+        });
+
+        // Player Health
+        this.playerHealth = 3;
+        this.healthText = this.add.text(16, 16, 'Health: ' + this.playerHealth, { fontSize: '32px', fill: '#fff' });
+
         // Score
         this.score = 0;
-        this.scoreText = this.add.text(16, 16, 'Vinyls: 0', { fontSize: '32px', fill: '#fff' });
+        this.scoreText = this.add.text(16, 50, 'Vinyls: 0', { fontSize: '32px', fill: '#fff' });
 
         // Vinyls
         this.vinyls = this.physics.add.group();
@@ -94,6 +122,8 @@ class SlotCanyonScene extends Phaser.Scene {
         this.physics.add.overlap(this.player, this.vinyls, this.collectVinyl, null, this);
         this.physics.add.collider(this.projectiles, this.zomboids, this.hitZomboid, null, this);
         this.physics.add.collider(this.player, this.zomboids, this.playerHit, null, this);
+        this.physics.add.overlap(this.player, this.beerMugs, this.collectBeerMug, null, this);
+        this.physics.add.overlap(this.player, this.tempoTonics, this.collectTempoTonic, null, this);
 
         // Spawn zomboids
         this.time.addEvent({
@@ -102,22 +132,36 @@ class SlotCanyonScene extends Phaser.Scene {
             callbackScope: this,
             loop: true
         });
+
+        this.time.addEvent({
+            delay: 5000,
+            callback: this.spawnBeerMug,
+            callbackScope: this,
+            loop: true
+        });
+
+        this.time.addEvent({
+            delay: 7000,
+            callback: this.spawnTempoTonic,
+            callbackScope: this,
+            loop: true
+        });
     }
 
     update() {
         // Player movement
         if (this.cursors.left.isDown || this.keyA.isDown) {
-            this.player.setVelocityX(-160);
+            this.player.setVelocityX(-this.playerSpeed);
         } else if (this.cursors.right.isDown || this.keyD.isDown) {
-            this.player.setVelocityX(160);
+            this.player.setVelocityX(this.playerSpeed);
         } else {
             this.player.setVelocityX(0);
         }
 
         if (this.cursors.up.isDown || this.keyW.isDown) {
-            this.player.setVelocityY(-160);
+            this.player.setVelocityY(-this.playerSpeed);
         } else if (this.cursors.down.isDown || this.keyS.isDown) {
-            this.player.setVelocityY(160);
+            this.player.setVelocityY(this.playerSpeed);
         } else {
             this.player.setVelocityY(0);
         }
@@ -175,38 +219,25 @@ class SlotCanyonScene extends Phaser.Scene {
         }
     }
 
-    createPlayerTexture() {
-        let canvas = this.textures.createCanvas('player', 32, 32);
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#0000FF'; // Blue
-        ctx.fillRect(0, 0, 32, 32);
-        canvas.refresh();
+    collectTempoTonic(player, tempoTonic) {
+        tempoTonic.disableBody(true, true);
+        this.playerSpeed = 160 * 1.5; // +50% speed
+        this.time.delayedCall(5000, () => {
+            this.playerSpeed = 160; // Reset speed after 5 seconds
+        }, [], this);
     }
 
-    createZomboidTexture() {
-        let canvas = this.textures.createCanvas('zomboid', 32, 32);
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#808080'; // Gray
-        ctx.fillRect(0, 0, 32, 32);
-        canvas.refresh();
+    spawnBeerMug() {
+        const beerMug = this.beerMugs.get();
+        if (beerMug) {
+            beerMug.spawn(800, Phaser.Math.Between(100, 500));
+        }
     }
 
-    createVinylTexture() {
-        let canvas = this.textures.createCanvas('vinyl', 32, 32);
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#FFFF00'; // Yellow
-        ctx.beginPath();
-        ctx.arc(16, 16, 16, 0, Math.PI * 2, true);
-        ctx.closePath();
-        ctx.fill();
-        canvas.refresh();
-    }
-
-    createProjectileTexture() {
-        let canvas = this.textures.createCanvas('projectile', 16, 16);
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#FFFFFF'; // White
-        ctx.fillRect(0, 0, 16, 16);
-        canvas.refresh();
+    spawnTempoTonic() {
+        const tempoTonic = this.tempoTonics.get();
+        if (tempoTonic) {
+            tempoTonic.spawn(800, Phaser.Math.Between(100, 500));
+        }
     }
 }
