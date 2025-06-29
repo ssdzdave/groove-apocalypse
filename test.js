@@ -4,9 +4,18 @@ async function runGame() {
     let serverProcess;
     try {
         // Start live-server as a child process
-        serverProcess = spawn('npx', ['live-server', '.', '--port=8080', '--no-browser']);
+        const args = process.argv.slice(2);
+        let port = 8080;
+        for (const arg of args) {
+            if (arg.startsWith('--port=')) {
+                port = parseInt(arg.split('=')[1]);
+                break;
+            }
+        }
 
-        console.log("Live-server started on http://localhost:8080. Please open this URL in your browser for manual testing.");
+        serverProcess = spawn('npx', ['live-server', '.', `--port=${port}`, '--no-browser']);
+
+        console.log(`Live-server started on http://localhost:${port}. Please open this URL in your browser for manual testing.`);
         console.log("Press Ctrl+C to stop the server.");
 
         // Keep the process alive until manually terminated
