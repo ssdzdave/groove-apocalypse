@@ -127,7 +127,7 @@ class SlotCanyonScene extends Phaser.Scene {
         // Projectiles
         this.projectiles = this.physics.add.group({
             classType: Projectile,
-            maxSize: 10,
+            maxSize: 50, // Increased for testing
             runChildUpdate: true
         });
 
@@ -223,6 +223,19 @@ class SlotCanyonScene extends Phaser.Scene {
         });
 
         this.generateLevel();
+
+        // Report initial game state for testing
+        this.reportGameState();
+    }
+
+    reportGameState() {
+        const gameState = {
+            playerX: this.player.x,
+            playerY: this.player.y,
+            playerHealth: this.playerHealth,
+            activeProjectiles: this.projectiles.getChildren().filter(p => p.active).length
+        };
+        console.log("GAME_STATE:" + JSON.stringify(gameState));
     }
 
     hitDroneBot(projectile, droneBot) {
@@ -267,6 +280,9 @@ class SlotCanyonScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this.keyE) && this.canSonicSlide) {
             this.sonicSlide();
         }
+
+        // Report game state for testing
+        this.reportGameState();
     }
 
     collectVinyl(player, vinyl) {
@@ -280,10 +296,16 @@ class SlotCanyonScene extends Phaser.Scene {
     }
 
     shootProjectile() {
-        const projectile = this.projectiles.get();
-        if (projectile) {
-            projectile.fire(this.player.x, this.player.y);
+        let projectile = this.projectiles.get();
+        console.log("Before get():", this.projectiles.getChildren().map(p => ({ active: p.active, visible: p.visible })));
+        if (!projectile) {
+            projectile = new Projectile(this, 0, 0);
+            this.projectiles.add(projectile);
+            console.log("New projectile created and added.");
         }
+        projectile.fire(this.player.x, this.player.y);
+        console.log("After fire():", { active: projectile.active, visible: projectile.visible, x: projectile.x, y: projectile.y });
+        console.log("Projectiles after fire():", this.projectiles.getChildren().map(p => ({ active: p.active, visible: p.visible, x: p.x, y: p.y })));
     }
 
     spawnZomboid() {

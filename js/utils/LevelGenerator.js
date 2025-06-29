@@ -73,10 +73,23 @@ class LevelGenerator {
 
     getSpawnPosition() {
         let spawnX, spawnY;
-        do {
+        let foundValidSpawn = false;
+        while (!foundValidSpawn) {
             spawnX = Phaser.Math.Between(1, this.width - 2);
             spawnY = Phaser.Math.Between(1, this.height - 2);
-        } while (this.grid[spawnY][spawnX] !== 0);
+
+            if (this.grid[spawnY][spawnX] === 0) {
+                // Check if there's an open path in all 4 cardinal directions
+                const hasUp = (spawnY - 1 >= 0 && this.grid[spawnY - 1][spawnX] === 0);
+                const hasDown = (spawnY + 1 < this.height && this.grid[spawnY + 1][spawnX] === 0);
+                const hasLeft = (spawnX - 1 >= 0 && this.grid[spawnY][spawnX - 1] === 0);
+                const hasRight = (spawnX + 1 < this.width && this.grid[spawnY][spawnX + 1] === 0);
+
+                if (hasUp && hasDown && hasLeft && hasRight) {
+                    foundValidSpawn = true;
+                }
+            }
+        }
         return { x: spawnX * this.tileSize + this.tileSize / 2, y: spawnY * this.tileSize + this.tileSize / 2 };
     }
 
