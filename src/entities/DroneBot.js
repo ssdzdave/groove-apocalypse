@@ -13,6 +13,7 @@ export default class DroneBot extends Phaser.Physics.Arcade.Sprite {
         scene.add.existing(this);
         scene.physics.add.existing(this);
         this.setDepth(DEPTH.enemies);
+        this.body.setSize(22, 22);
         if (this.body && this.body.setAllowGravity) this.body.setAllowGravity(false);
 
         this.level = level || 1;

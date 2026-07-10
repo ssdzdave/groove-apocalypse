@@ -11,6 +11,7 @@ export default class Zomboid extends Phaser.Physics.Arcade.Sprite {
         scene.add.existing(this);
         scene.physics.add.existing(this);
         this.setDepth(DEPTH.enemies);
+        this.body.setSize(22, 22);
 
         this.level = level || 1;
         this.speed = BASE_SPEED * (1 + 0.08 * (this.level - 1));

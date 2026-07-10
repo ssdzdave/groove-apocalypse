@@ -2,17 +2,12 @@
   "name": "groove-apocalypse",
   "version": "1.0.0",
   "description": "A psychedelic music-wielding dungeon crawler.",
-  "main": "js/main.js",
   "scripts": {
-    "start": "live-server",
-    "test": "node test.js"
+    "start": "live-server --port=8080"
   },
   "author": "Nomadic Practice",
   "license": "ISC",
   "dependencies": {
     "live-server": "^1.2.2"
-  },
-  "devDependencies": {
-    "puppeteer": "^22.0.0"
   }
 }

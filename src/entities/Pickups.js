@@ -37,6 +37,8 @@ export class Vinyl extends BasePickup {
     constructor(scene, x, y) {
         super(scene, x, y, 'vinyl', 'vinyl-spin');
         this.pickupType = 'vinyl';
+        // Vinyls are quota items — they must never expire
+        if (this._expireTimer) { this._expireTimer.remove(false); this._expireTimer = null; }
         Juice.addBloom(this, { color: PALETTE.gold, strength: 1 });
     }
     static spawn(scene, x, y) { return new Vinyl(scene, x, y); }

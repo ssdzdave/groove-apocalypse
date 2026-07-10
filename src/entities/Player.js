@@ -17,6 +17,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         scene.physics.add.existing(this);
         this.setCollideWorldBounds(true);
         this.setDepth(DEPTH.player);
+        // Slim hitbox so 32px corridors are comfortably navigable
+        this.body.setSize(20, 24);
+        this.body.setOffset(6, 8);
 
         this.hp = 3;
         this.maxHp = 3;

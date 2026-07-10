@@ -25,6 +25,10 @@ export class PlayerProjectile extends Phaser.Physics.Arcade.Sprite {
         if (this.body) {
             this.body.enable = true;
             if (this.body.setAllowGravity) this.body.setAllowGravity(false);
+            // Pooled sprites keep the body size of their creation texture (32x32
+            // __DEFAULT) — resize to a forgiving hitbox and re-sync to position.
+            this.body.setSize(10, 10);
+            this.body.reset(x, y);
         }
         this.piercing = !!opts.piercing;
         const speed = opts.speed || 380;
@@ -80,6 +84,8 @@ export class SilenceProjectile extends Phaser.Physics.Arcade.Sprite {
         if (this.body) {
             this.body.enable = true;
             if (this.body.setAllowGravity) this.body.setAllowGravity(false);
+            this.body.setSize(10, 10);
+            this.body.reset(x, y);
         }
         const speed = opts.speed || 200;
         const len = Math.hypot(dirX, dirY) || 1;

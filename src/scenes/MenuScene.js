@@ -195,7 +195,7 @@ export default class MenuScene extends Phaser.Scene {
         const depth = 10;
 
         const glow = this.add.rectangle(cx, cy, PANEL_W + 26, PANEL_H + 26, info.accent, 0.18).setDepth(depth);
-        const bg = this.add.rectangle(cx, cy, PANEL_W, PANEL_H, 0x0d0518, 0.72).setDepth(depth + 1);
+        const bg = this.add.rectangle(cx, cy, PANEL_W, PANEL_H, 0x0d0518, 0.94).setDepth(depth + 1);
         const border = this.add.rectangle(cx, cy, PANEL_W, PANEL_H)
             .setStrokeStyle(3, info.accent, 1).setDepth(depth + 2);
 

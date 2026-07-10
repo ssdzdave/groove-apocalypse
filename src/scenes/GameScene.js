@@ -23,6 +23,10 @@ export default class GameScene extends Phaser.Scene {
         this.charId = (data && data.charId) || CHARACTERS.ELLIOT;
         this.conversions = 0;
         this.boss = null;
+        // Phaser reuses the scene instance across runs — clear stale refs
+        this.player = null;
+        this._levelColliders = [];
+        this._world = null;
         this.currentLevel = 0;
         this._gameOverFired = false;
         this._portalEntering = false;
@@ -77,6 +81,19 @@ export default class GameScene extends Phaser.Scene {
         this.events.on('shutdown', this._onShutdown, this);
 
         this.startLevel(1);
+
+        // UIScene is launched alongside this scene and attaches its listeners a
+        // tick after startLevel(1) emitted the initial HUD events — re-emit them.
+        this.time.delayedCall(150, () => {
+            if (this._gameOverFired) return;
+            const zone = this._zone;
+            this.game.events.emit(EVT.LEVEL_START, {
+                level: this.currentLevel, zoneId: zone.id, zoneName: zone.name, isBoss: isBossLevel(this.currentLevel)
+            });
+            this.game.events.emit(EVT.VINYLS, this._vinylsCollected, this._vinylsNeeded);
+            this.game.events.emit(EVT.PLAYER_HP, this.player.hp, this.player.maxHp);
+            if (this.boss && this.boss.active) this.game.events.emit(EVT.BOSS_HP, this.boss.hp, this.boss.maxHp);
+        });
     }
 
     // ---------------------------------------------------------------- level flow
@@ -85,6 +102,8 @@ export default class GameScene extends Phaser.Scene {
         const isBoss = isBossLevel(n);
 
         // teardown previous level state
+        (this._levelColliders || []).forEach((c) => c.destroy());
+        this._levelColliders = [];
         if (this._portalOverlap) { this._portalOverlap.destroy(); this._portalOverlap = null; }
         this._bossOverlaps.forEach((c) => c.destroy());
         this._bossOverlaps = [];
@@ -130,11 +149,13 @@ export default class GameScene extends Phaser.Scene {
             this.player.setVelocity(0, 0);
         }
 
-        this.physics.add.collider(this.player, world.wallsGroup);
-        this.physics.add.collider(this.zomboids, world.wallsGroup);
-        this.physics.add.collider(this.droneBots, world.wallsGroup);
-        this.physics.add.collider(this.playerProjectiles, world.wallsGroup, (p) => p.deactivate());
-        this.physics.add.collider(this.silenceProjectiles, world.wallsGroup, (p) => p.deactivate());
+        this._levelColliders.push(
+            this.physics.add.collider(this.player, world.wallsGroup),
+            this.physics.add.collider(this.zomboids, world.wallsGroup),
+            this.physics.add.collider(this.droneBots, world.wallsGroup),
+            this.physics.add.collider(this.playerProjectiles, world.wallsGroup, (p) => p.deactivate()),
+            this.physics.add.collider(this.silenceProjectiles, world.wallsGroup, (p) => p.deactivate())
+        );
 
         this._portalOverlap = this.physics.add.overlap(this.player, world.portal, () => {
             if (world.portal.getData('open')) this._enterPortal();
