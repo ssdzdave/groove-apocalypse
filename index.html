@@ -1,31 +1,28 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nomadic Practice: Groove Apocalypse</title>
     <style>
-        body {
-            background-color: #000;
-            color: #fff;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+        html, body {
             margin: 0;
-            font-family: 'Monaco', monospace;
+            padding: 0;
+            background: #0d0518;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #game-container canvas {
+            image-rendering: pixelated;
+            box-shadow: 0 0 60px rgba(140, 60, 255, 0.35);
         }
     </style>
 </head>
 <body>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
-    <script src="js/scenes/SlotCanyonScene.js"></script>
-    <script src="js/items/Projectile.js"></script>
-    <script src="js/enemies/Zomboid.js"></script>
-    <script src="js/enemies/DroneBot.js"></script>
-    <script src="js/items/BeerMug.js"></script>
-    <script src="js/items/TempoTonic.js"></script>
-    <script src="js/items/MysteryTape.js"></script>
-    <script src="js/utils/LevelGenerator.js"></script>
-    <script src="js/main.js"></script>
+    <div id="game-container"></div>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+    <script type="module" src="src/main.js"></script>
 </body>
 </html>
