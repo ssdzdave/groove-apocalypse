@@ -148,5 +148,24 @@ export const AudioEngine = {
         } catch (e) {
             return { ctxState: 'uninitialized', mood: null, intensity };
         }
-    }
+    },
+
+    // ---------------- PHASE 3 (Stage-0 stubs; WS-B replaces internals) ----
+    // onBeat/offBeat are REAL: the listener set below must survive WS-B's
+    // rewrite — its scheduler simply invokes beatListeners at beat time.
+    onBeat(cb) { beatListeners.add(cb); },
+    offBeat(cb) { beatListeners.delete(cb); },
+
+    getBeatInfo() {
+        return { active: false, bpm: 0, beatDurMs: 0, beatIndex: -1, phase: 0, sinceMs: Infinity, untilMs: Infinity };
+    },
+
+    setMusicVolume(v) { pendingVolumes.music = clamp01(v); },
+    setSfxVolume(v) { pendingVolumes.sfx = clamp01(v); },
+    getVolumes() { return { musicVol: pendingVolumes.music, sfxVol: pendingVolumes.sfx }; },
+    setDucked(on) { /* WS-B */ }
 };
+
+// Phase-3 module state (Stage 0)
+const beatListeners = new Set();
+const pendingVolumes = { music: 1, sfx: 1 };

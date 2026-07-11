@@ -236,3 +236,148 @@ export const Juice = {
 - Only MenuScene calls `AudioEngine.init()`.
 - Boss ↔ GameScene seam: fields pinned in Contract 5; damage rule pinned in Contract 7.
 - Texture keys/frames: exactly as the Contract 1 table; C/D/E/F play anims by the pinned names only.
+
+---
+---
+
+# PHASE 3 CONTRACTS — "The Groove Update"
+
+Beat-synced gameplay · score/combos/endless · new enemies + Feedback Baron · pause/settings/gamepad.
+Same rules as Phase 2: implement ONLY files you own; import everything shared from `src/config.js` (which gained Phase-3 appends: `BOSS_IDS`, `bossForLevel`, `BOSS_NAMES`, `STORAGE`, `ONBEAT_WINDOW_MS`, `COMBO_WINDOW_MS`, `SCORE_VALUES`, `EVT.SCORE/COMBO/BEAT`, `DEPTH.hazard`). Never inline `'gp-'` strings, storage keys, or score values.
+
+## Pinned decisions (all workstreams)
+
+- **D1 — Beat timing lives in the audio clock.** A beat = every 4th 16th step (unswung). Consumers of the on-beat BONUS poll `AudioEngine.getBeatInfo()` at the moment of interest: `onBeat = info.active && Math.min(info.sinceMs, info.untilMs) <= ONBEAT_WINDOW_MS`. `EVT.BEAT` events (bridged from AudioEngine in main.js — already wired) are for VISUALS ONLY, never the bonus check. Nobody converts AudioContext time to Phaser time.
+- **D2 — Score flows by DIRECT CALLS** into `scene.score` (a ScoreSystem instance created by GameScene). ScoreSystem emits `EVT.SCORE`/`EVT.COMBO` and owns the score `Juice.floatText` popups. EVT listeners NEVER add score.
+- **D3 — Pause ducks, never suspends.** `AudioEngine.setDucked(true)` ramps the music bus to ×0.35 (0.25s); the AudioContext keeps running (pause-menu SFX work; beats keep broadcasting for the HUD pulse). GameScene is `scene.pause()`d so no gameplay advantage exists.
+- **D4 — Volumes:** AudioEngine caches setter values pre-init and applies them on `init()`; `Storage` persists them; AudioEngine never touches localStorage.
+- **D5 — Endless via start-data.** Winning L6 (non-endless) emits `EVT.GAME_OVER` with `canContinue: true`. GameOverScene's KEEP RIDING does `scene.start('GameScene', { charId, endless: true, startLevel: 7, carry: { score, conversions } })` + `launch('UIScene')`. In endless, `_enterPortal` never wins — levels count up forever. `isBossLevel`/`vinylsForLevel`/`getZoneForLevel` already generalize past 6.
+- **D6 — Boss cycle:** `bossForLevel(n)` from config: Sheriff at L3/L9/…, Baron at L6/L12/…. FeedbackBaron implements the IDENTICAL seam as SilentSheriff (`stunned`, `stun(ms)`, `onProjectileHit(proj)`, `onSpecialHit()`, emits `EVT.BOSS_HP`, sets scene data `'bossDefeated'` on death) so GameScene's wiring stays class-agnostic.
+- **D7 — Gamepad mapping:** left stick/dpad move (deadzone 0.25), buttons 0 (A)/2 (X) shoot, 1 (B)/7 (R2) special, 9 (Start) pause / menu confirm-alt; dpad/stick menu nav, A confirm. Gamepad input is NOT a browser audio-unlock gesture: MenuScene also unlocks on `pointerdown`, and the "press any key" hint stays.
+- **Elite zomboid has NO new texture:** `zomboid` sheet + `setTint(PALETTE.gold)` + `setScale(1.15)`.
+- Extended payloads: `EVT.LEVEL_START` gains `bossName` (from `BOSS_NAMES`) on boss levels; `EVT.GAME_OVER` gains `{ score, maxCombo, endless, canContinue }`.
+
+## P3-A — TextureFactory + ZoneThemes additions (WS-A)
+
+Append inside `generateAll`'s existing idempotency guard, using the existing sheet/anim helpers:
+
+| Key | Frame | Frames | Anims |
+|---|---|---|---|
+| `amp_golem` | 32×32 | 6: walk 0-3 (hulking speaker-stack golem, orange cone "face", thick silhouette), cracked-walk 4-5 | `golem-walk`(0-3 loop), `golem-cracked`(4-5 loop) |
+| `feedback_phantom` | 32×32 | 6: float 0-3 (tattered translucent figure, magenta static edges), teleport-shimmer 4-5 | `phantom-float`(0-3 loop), `phantom-tele`(4-5 once) |
+| `boss_baron` | 64×64 | 8: idle 0-3 (top-hat amp-stack baron, gold monocle, cable whips), attack 4-5, stunned 6-7 | `baron-idle`, `baron-attack`, `baron-stunned` (same pattern as sheriff) |
+| `silence_pool` | 48×48 | 3 shimmer (black void puddle, purple rim ripple) | `pool-shimmer`(0-2 loop, slow) |
+| `ui_note` | 16×16 | 2 (gold eighth-note glyph: dim, bright) | — (UIScene tweens it) |
+
+ZoneThemes: on boss levels use `bossForLevel(level)` — baron levels return `{ id:'lair', name: "The Baron's Feedback Chamber", accent: PALETTE.gold }` (same tileKey/musicMood); sheriff levels unchanged.
+
+## P3-B — AudioEngine additions (WS-B)
+
+```js
+AudioEngine.getBeatInfo()  // -> { active, bpm, beatDurMs, beatIndex, phase 0..1, sinceMs, untilMs } — pure ctx-clock math
+AudioEngine.onBeat(cb) / offBeat(cb)  // ALREADY EXIST as a module-level Set (Stage 0) — keep the Set; your scheduler invokes it
+AudioEngine.setMusicVolume(v) / setSfxVolume(v) / getVolumes()  // 0..1, cached pre-init, applied at init; new musicBusGain node between music buses and masterGain
+AudioEngine.setDucked(on)  // music ×0.35, 0.25s ramp, idempotent
+AudioEngine.debugState()   // extend with { musicVol, sfxVol, ducked, beat: { active, bpm, beatIndex } }
+```
+Implementation: `MusicGenerator` gets an `onBeatScheduled(beatIndex, audioTime, bpm)` hook called in `_scheduleStep` when `stepIndex % 4 === 0` (pre-swing base time). AudioEngine sets the hook only on `currentMusic.generator` and clears it on crossfade-out (beats never double-fire during crossfade). It records `{ anchorTime, beatDur, beatIndex }` for `getBeatInfo()` and arms a `setTimeout((t - ctx.currentTime)*1000)` per beat to invoke the listener Set. `getBeatInfo().active === false` whenever no music plays or pre-init.
+New pinned SFX (append; all must exist): `onbeat`, `phantom_tele`, `golem_shockwave`, `pause`, `combo_break`, `highscore`.
+
+## P3-C — Core integration (WS-C: GameScene, Player, Zomboid, Projectiles)
+
+- **On-beat shooting** in `Player.shoot()` per D1. On-beat projectiles: `fire(..., { onBeat: true })` → projectile stores `this.onBeat`, scale 1.35, white-hot tint, `sfx('onbeat')`. Pinned effects: impact conversion mini-AoE (converts zomboids within 48px of impact), counts as 2 hits on Amp Golems, ScoreSystem gets `onBeat: true` (×2 base). On-beat `special()`: that cycle's cooldown is 2000ms instead of 3000ms.
+- **ScoreSystem wiring** per D2: `this.score = new ScoreSystem(this, data.carry || null)` in create; direct calls: vinyl → `score.onVinyl(x, y)`; drone kill → `score.onKill(x, y, { kind:'drone', onBeat })`; `Zomboid.convert(opts)` gains `{ onBeat }` and calls `scene.score.onConversion(x, y, { elite: this.elite, onBeat, kind: 'zomboid' })`; portal → `score.onLevelClear(n)`; bossDefeated listener → `score.onBossDefeated(x, y)`; `Player.damage` → `scene.score.notifyPlayerDamaged()`. Call `score.destroy()` on shutdown.
+- **Elite zomboids:** `Zomboid` ctor `opts = { elite }` → gold tint + scale 1.15 + speed ×1.6; spawn chance `n < 3 ? 0 : min(0.35, 0.06*(n-2))`.
+- **Spawn tables:** Amp Golems from L4 (timer ~10s, cap 2; endless 3), Feedback Phantoms from L5 (~12s, cap 2; endless 3). Pinned public groups: `this.golems`, `this.phantoms`, `this.silencePools`. Overlaps: playerProjectiles×golems → `g.hit(proj)`; ×phantoms → `if (!p.phased) p.convert({ onBeat: proj.onBeat })`. `stunAllEnemies` covers golems + phantoms too.
+- **Silence pools:** non-boss L5+ count `min(1 + floor((n-5)/2), 4)`; Baron arenas 2. Place via `SilencePool.placePools(scene, levelData, count)`. Per-frame: `this.player.setSilenced(this.physics.overlap(this.player, this.silencePools))`.
+- **`Player.setSilenced(bool)`:** speed ×0.5, `shoot()` no-ops (dull click ≤1/s), gray-blue tint while inside.
+- **Endless:** create-data `{ charId, endless, startLevel, carry }`; `_enterPortal` gates `winGame()` on `!this.endless && n >= MAX_LEVEL`; win payload gains `canContinue: !this.endless`. Difficulty pinned: `spawnDelay = max(450, 2000 - 150*n)`; zomboid speed factor capped ×2.2; `ZOMBOID_CAP = 10 + floor(max(0, n-6)/2)` cap 16; `DRONE_CAP = 4 + floor(max(0, n-6)/3)` cap 7.
+- **Boss selection:** `bossForLevel(n) === BOSS_IDS.BARON ? new FeedbackBaron(...) : new SilentSheriff(...)`; existing wiring unchanged; `LEVEL_START` gains `bossName`.
+- **Pause + gamepad:** keys gain ESC + P; `update()` polls `this.input.gamepad` per D7 merged with keyboard (put movement-vector logic in a `getMoveVector()` the Player reads); ESC/P/Start → `this.scene.launch('PauseScene'); this.scene.pause(); AudioEngine.setDucked(true); AudioEngine.sfx('pause');` (guard: not when `_gameOverFired`, no double-launch).
+- **Beat visuals:** listen `EVT.BEAT` on game.events (clean up on shutdown): subtle 120ms scale pulse 1.0→1.06 on active zomboids/golems/portal.
+- **Debug:** `getDebugState()` adds `{ score, combo, endless, paused }`; new `debugSkipLevel()` = open portal + teleport player onto it.
+- **Known regressions to avoid (from Phase 2):** pooled projectiles MUST `body.setSize(...)` + `body.reset(x, y)` in `fire()`; vinyls never expire; `create()` must null stale refs (`this.player`, `this._world`, `this._levelColliders`) because Phaser reuses scene instances.
+
+## P3-D — New entities (WS-D: AmpGolem, FeedbackPhantom, FeedbackBaron, SilencePool)
+
+Follow existing conventions from `Zomboid.js`/`SilentSheriff.js` (scene.add.existing, DEPTH.enemies, stun-tint pattern, Juice FX, `scene.anims.exists` guards, defensive scene-field checks).
+
+```js
+export default class AmpGolem extends Phaser.Physics.Arcade.Sprite {
+    constructor(scene, x, y, level)   // 'amp_golem', hp 3, speed ~30, body ~26×26
+    update(time, delta)               // slow chase; 'golem-walk'; at hp 1 → 'golem-cracked'
+    stun(ms)
+    hit(proj)                         // -1 (or -2 when proj.onBeat); Juice.hitFlash; at 0 → this.convert({ onBeat: proj.onBeat })
+    convert(opts)                     // dancer swap (scale 1.2), Juice.burst ×2, sfx('golem_shockwave'),
+                                      // shockwave ring r≈90: stuns enemies inside 1000ms and chain-converts zomboids ≤60px;
+                                      // scene.score.onConversion(x, y, { kind: 'golem', onBeat: opts && opts.onBeat })
+}
+export default class FeedbackPhantom extends Phaser.Physics.Arcade.Sprite {
+    constructor(scene, x, y, level)   // 'feedback_phantom'; phased = true (alpha 0.5, immune)
+    update(time, delta)               // every ~4s: teleport to an open tile 2-4 tiles from player (read scene._levelData.openTiles),
+                                      // 'phantom-tele' + sfx('phantom_tele') + Juice.burst; 400ms later fire 3-shot silence burst (±20°)
+                                      // via scene.silenceProjectiles; then phased = false for 1500ms (full alpha, magenta rim)
+    phased; stun(ms)                  // stun forces phased = false for the stun duration
+    convert(opts)                     // dancer swap; scene.score.onConversion(x, y, { kind: 'phantom', onBeat: opts && opts.onBeat })
+}
+export default class FeedbackBaron extends Phaser.Physics.Arcade.Sprite {
+    constructor(scene, x, y)          // 'boss_baron' 64×64; maxHp = 8 + 2*Math.max(0, Math.floor(scene.currentLevel/3) - 2);
+                                      // emits EVT.BOSS_HP(hp, maxHp); sfx('boss_roar'); body ~48×48; DEPTH.enemies
+    update(time, delta)               // phase 1 (hp > 50%): slow stalk + every ~6s summon 3-5 zomboids at arena-edge open tiles
+                                      //   (push into scene.zomboids; may exceed cap by ≤6) + occasional aimed 3-shot spread;
+                                      // phase 2 (hp ≤ 50%): every ~5s screen-edge sweep — picket line of silence projectiles
+                                      //   (~every 64px along a random edge) traversing the arena; faster stalk
+    stunned; stun(ms); onProjectileHit(proj); onSpecialHit()   // IDENTICAL semantics to SilentSheriff (D6) incl. death:
+                                      // EVT.BOSS_HP(null, null), scene.data.set('bossDefeated', true), bursts, destroy
+}
+export class SilencePool extends Phaser.Physics.Arcade.Sprite {}  // 'silence_pool', DEPTH.hazard, static circular body r≈26, 'pool-shimmer'
+SilencePool.placePools(scene, levelData, count)  // -> SilencePool[]; shuffled levelData.openTiles, ≥4 tiles from spawn,
+                                      // ≥3 from exit/bossTile and from each other; adds each into scene.silencePools
+```
+
+## P3-E — Scenes & UI (WS-E: UIScene, MenuScene, GameOverScene, PauseScene)
+
+- **UIScene:** score readout top-right (pop tween on EVT.SCORE); combo meter below it (`×N` + drain bar animated locally over COMBO_WINDOW_MS; hidden at combo ≤ 1; red flash + sfx('combo_break') on `{combo: 0}`); beat indicator: `ui_note` bottom-center pulsing on EVT.BEAT (scale 1→1.5→1, ~140ms), gold flash when an EVT.SCORE arrives with `onBeat: true`; boss banner/HP-bar label use `LEVEL_START.bossName` — REMOVE the two hard-coded SHERIFF strings (UIScene.js:155, 183). All new listeners join the existing teardown table.
+- **MenuScene:** top-5 high-score panel from `Storage.getHighScores()` (rank, score, char initial, `L{n}` or `∞` for endless) between title and panels; apply persisted volumes on create (D4); `pointerdown` audio unlock alongside keydown; gamepad menu nav (D7, 250ms repeat guard).
+- **GameOverScene:** stats gain `SCORE` + `BEST COMBO ×{maxCombo}`; call `Storage.submitScore({score, charId, level, endless, date})` exactly once; `isNewHigh` → pulsing "★ NEW HIGH SCORE ★" + sfx('highscore'); when `payload.canContinue` → two prompts: ENTER = KEEP RIDING (endless, per D5) / ESC = menu (plus gamepad A/B); endless death shows `RODE TO LEVEL {n}`.
+- **PauseScene** (key `'PauseScene'`): 0.7-alpha overlay + "PAUSED"; menu: RESUME / MUSIC slider / SFX slider / RESTART / QUIT TO MENU; ↑↓ nav (ui_move), ←→ adjust 0.1 steps (live AudioEngine setter + Storage.saveSettings), Enter/A activate, ESC/Start = resume. Resume: `setDucked(false); scene.stop(); scene.resume('GameScene')`. Restart = fresh L1 run: read charId from `this.scene.get('GameScene').charId`, stop Pause/UIScene/GameScene, `scene.start('GameScene', { charId })` + `launch('UIScene')`, unduck. Quit: stop all three, `scene.start('MenuScene')`, unduck + `startMusic('menu')`.
+
+## P3-F — Systems (WS-F: ScoreSystem, Storage)
+
+```js
+export default class ScoreSystem {
+    constructor(scene, carry = null)   // carry: { score, conversions }
+    onConversion(x, y, { elite = false, onBeat = false, kind = 'zomboid' } = {})  // combo-eligible; reason: zomboid→(elite?'elite_convert':'convert'), golem→'golem_convert', phantom→'phantom_convert'
+    onKill(x, y, { kind = 'drone', onBeat = false } = {})  // combo-eligible; 'drone_kill'
+    onVinyl(x, y)          // combo-exempt
+    onLevelClear(level)    // combo-exempt
+    onBossDefeated(x, y)   // combo-exempt
+    notifyPlayerDamaged()  // combo → 0; emit EVT.COMBO { combo: 0, comboMult: 1 }
+    get score(); get combo(); get maxCombo();
+    destroy()              // clears the expiry timer
+}
+// points = SCORE_VALUES[reason] * (onBeat ? 2 : 1) * comboMult (eligible only); comboMult = min(1 + 0.25*(combo-1), 3)
+// combo window = COMBO_WINDOW_MS via scene.time (auto-respects pause). Emits EVT.SCORE per award.
+// Owns popups: Juice.floatText "+{delta}" (append " ×{combo}" when combo ≥ 2; gold "ON BEAT!" variant when onBeat).
+
+export const Storage = {
+    getHighScores(),        // sorted desc, ≤5, of { score, charId, level, endless, date }
+    submitScore(entry),     // -> { rank: 1..5 | null, isNewHigh: boolean }; persists STORAGE.HIGHSCORES
+    getSettings(),          // { musicVol: 1, sfxVol: 1 } defaults merged over persisted STORAGE.SETTINGS
+    saveSettings(partial)
+};
+// Every method try/catch-wrapped; in-memory fallback when localStorage is unavailable; malformed JSON never throws.
+```
+
+## Ownership matrix (Phase 3)
+
+| Files | Owner |
+|---|---|
+| gfx/TextureFactory.js, gfx/ZoneThemes.js | A |
+| audio/AudioEngine.js, audio/MusicGenerator.js, audio/SfxBank.js | B |
+| scenes/GameScene.js, entities/Player.js, entities/Zomboid.js, entities/Projectiles.js | C |
+| entities/AmpGolem.js, entities/FeedbackPhantom.js, entities/FeedbackBaron.js, world/SilencePool.js | D |
+| scenes/UIScene.js, scenes/MenuScene.js, scenes/GameOverScene.js, scenes/PauseScene.js | E |
+| systems/ScoreSystem.js, systems/Storage.js | F |
+
+Untouched by everyone: DroneBot.js, Pickups.js, SilentSheriff.js, LevelGenerator.js, WorldBuilder.js, Juice.js, index.html, main.js, config.js.
