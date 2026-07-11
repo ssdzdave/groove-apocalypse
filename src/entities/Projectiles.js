@@ -3,15 +3,19 @@ import { DEPTH } from '../config.js';
 
 const DEFAULT_LIFE_MS = 1500;
 
+const ONBEAT_SCALE = 1.35;
+const ONBEAT_TINT = 0xffffff; // white-hot
+
 export class PlayerProjectile extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x = 0, y = 0, texture = 'proj_chord') {
         super(scene, x, y, texture);
         this.piercing = false;
+        this.onBeat = false;
         this._life = DEFAULT_LIFE_MS;
         this._elapsed = 0;
     }
 
-    // fire(x, y, dirX, dirY, opts) — opts: { texture, speed, piercing }
+    // fire(x, y, dirX, dirY, opts) — opts: { texture, speed, piercing, onBeat }
     fire(x, y, dirX, dirY, opts = {}) {
         const scene = this.scene;
         const texture = opts.texture || 'proj_chord';
@@ -31,6 +35,14 @@ export class PlayerProjectile extends Phaser.Physics.Arcade.Sprite {
             this.body.reset(x, y);
         }
         this.piercing = !!opts.piercing;
+        this.onBeat = !!opts.onBeat;
+        if (this.onBeat) {
+            this.setScale(ONBEAT_SCALE);
+            this.setTintFill(ONBEAT_TINT);
+        } else {
+            this.setScale(1);
+            this.clearTint();
+        }
         const speed = opts.speed || 380;
         const len = Math.hypot(dirX, dirY) || 1;
         const nx = dirX / len, ny = dirY / len;
@@ -63,6 +75,7 @@ export class PlayerProjectile extends Phaser.Physics.Arcade.Sprite {
         this.setVisible(false);
         this.setVelocity(0, 0);
         if (this.body) this.body.enable = false;
+        this.onBeat = false;
     }
 }
 

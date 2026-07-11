@@ -797,6 +797,278 @@ function drawScanline(ctx) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 3 additions (P3-A) — new enemies, boss, hazard, UI glyph
+// ---------------------------------------------------------------------------
+
+/**
+ * 32×32, 6-frame walking speaker-stack golem: walk 0-3, cracked-walk 4-5.
+ * Wide, heavy silhouette; orange speaker-cone "face" doubles as the head.
+ */
+function drawAmpGolemFrame(ctx, i) {
+    const cx = 16;
+    const cracked = i >= 4;
+    const sub = cracked ? i - 4 : i;
+    const stomp = cracked ? [0, 2][sub] : [0, 2, 0, -2][sub];
+
+    ctx.save();
+
+    // wide ground shadow — heavier than a humanoid
+    ctx.globalAlpha = 0.35;
+    block(ctx, cx - 9, 28, 18, 2, BLACK);
+    ctx.globalAlpha = 1;
+
+    // stubby legs
+    block(ctx, cx - 8 + stomp, 23, 5, 5, '#1a1a22');
+    block(ctx, cx + 3 - stomp, 23, 5, 5, '#1a1a22');
+
+    // lower cabinet — wide, heavy body
+    block(ctx, cx - 10, 14, 20, 11, DARK_GRAY);
+    block(ctx, cx - 10, 14, 20, 2, '#44444e'); // top-lit edge
+    block(ctx, cx - 10, 22, 20, 3, '#1e1e26'); // base shade
+    px(ctx, cx - 10, 14, BROWN_HAT_DK, 2);
+    px(ctx, cx + 8, 14, BROWN_HAT_DK, 2);
+    px(ctx, cx - 10, 23, BROWN_HAT_DK, 2);
+    px(ctx, cx + 8, 23, BROWN_HAT_DK, 2);
+
+    // thick stubby arms
+    const armSwing = cracked ? 0 : [0, 1, 0, -1][sub];
+    block(ctx, cx - 13, 15 + armSwing, 4, 8, '#26262e');
+    block(ctx, cx + 9, 15 - armSwing, 4, 8, '#26262e');
+
+    // upper cabinet "head" — orange speaker-cone face
+    block(ctx, cx - 8, 3, 16, 12, DARK_GRAY);
+    block(ctx, cx - 8, 3, 16, 2, '#44444e');
+    ctx.fillStyle = cracked ? '#8a5a2a' : ORANGE;
+    ctx.beginPath(); ctx.arc(cx, 9, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = cracked ? '#5a3a1a' : '#c86a2a';
+    ctx.beginPath(); ctx.arc(cx, 9, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = BLACK;
+    ctx.beginPath(); ctx.arc(cx, 9, 2, 0, Math.PI * 2); ctx.fill();
+    px(ctx, cx - 7, 4, SILVER, 2);
+    px(ctx, cx + 5, 4, SILVER, 2);
+    px(ctx, cx - 7, 12, SILVER, 2);
+    px(ctx, cx + 5, 12, SILVER, 2);
+
+    if (cracked) {
+        ctx.strokeStyle = DARK_RED;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx - 4, 4); ctx.lineTo(cx - 1, 10); ctx.lineTo(cx - 5, 16); ctx.lineTo(cx - 2, 22);
+        ctx.stroke();
+        px(ctx, cx + 4, 18, DARK_RED, 2);
+    } else {
+        const rng = mulberry32(i * 83 + 5);
+        for (let s = 0; s < 3; s++) {
+            px(ctx, cx - 7 + Math.floor(rng() * 14), 15 + Math.floor(rng() * 6), GOLD, 2);
+        }
+    }
+
+    ctx.restore();
+}
+
+/**
+ * 32×32, 6-frame tattered ghost: float 0-3, teleport-shimmer 4-5.
+ * Translucent feel via dithered "punched" pixels + scattered magenta static.
+ */
+function drawFeedbackPhantomFrame(ctx, i) {
+    const cx = 16;
+    const tele = i >= 4;
+    const sub = tele ? i - 4 : i;
+    const bob = tele ? 0 : [0, -2, 0, 2][sub];
+
+    ctx.save();
+    ctx.translate(0, bob);
+
+    ctx.globalAlpha = tele ? 0.85 : 0.55;
+
+    // tattered robe body
+    ctx.fillStyle = '#cfc8e0';
+    ctx.fillRect(cx - 7, 8, 14, 14);
+
+    // jagged tatter hem (deterministic per-frame flutter)
+    const rngHem = mulberry32(i * 13 + 1);
+    for (let t = 0; t < 7; t++) {
+        const th = Math.floor(rngHem() * 4);
+        ctx.fillRect(cx - 7 + t * 2, 22, 2, 3 + th);
+    }
+
+    // hood
+    ctx.fillStyle = '#e8e0f5';
+    ctx.beginPath(); ctx.arc(cx, 8, 6, Math.PI, 0); ctx.fill();
+    ctx.fillRect(cx - 6, 8, 12, 3);
+
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = BLACK;
+    ctx.fillRect(cx - 3, 6, 2, 3);
+    ctx.fillRect(cx + 1, 6, 2, 3);
+
+    // scattered magenta static along the silhouette
+    const rng = mulberry32(i * 61 + 9);
+    const staticCount = tele ? 10 : 5;
+    for (let s = 0; s < staticCount; s++) {
+        px(ctx, cx - 8 + Math.floor(rng() * 17), 6 + Math.floor(rng() * 22), MAGENTA, 2);
+    }
+
+    // dithered holes punched out of the robe — translucent feel
+    ctx.globalCompositeOperation = 'destination-out';
+    for (let dy = 10; dy < 24; dy += 4) {
+        for (let dxp = cx - 6; dxp < cx + 6; dxp += 4) {
+            ctx.fillRect(dxp, dy, 2, 2);
+        }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    if (tele) {
+        ctx.globalAlpha = 0.6;
+        ctx.strokeStyle = CYAN;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(cx, 16, 10 + sub * 3, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+}
+
+/**
+ * 64×64, 8-frame boss: idle 0-3, attack 4-5, stunned 6-7 — mirrors drawBossFrame's
+ * layout so anim frame ranges match the pinned table. Top hat, amp-stack torso,
+ * gold monocle, cable-whip arms flared on attack, slumped with stars when stunned.
+ */
+function drawBaronFrame(ctx, i) {
+    let pose, sub;
+    if (i < 4) { pose = 'idle'; sub = i; }
+    else if (i < 6) { pose = 'attack'; sub = i - 4; }
+    else { pose = 'stunned'; sub = i - 6; }
+
+    const cx = 32;
+    const dy = pose === 'idle' ? [0, -1, 0, 1][sub] : 0;
+    const slump = pose === 'stunned' ? 4 : 0;
+
+    ctx.save();
+    ctx.translate(0, dy + slump);
+
+    // feedback-static aura (behind everything) — gold/magenta sparks
+    const rng = mulberry32(i * 79 + 5);
+    for (let s = 0; s < 14; s++) {
+        const ang = rng() * Math.PI * 2;
+        const rad = 22 + rng() * 6;
+        const gx = Math.round(cx + Math.cos(ang) * rad);
+        const gy = Math.round(34 + Math.sin(ang) * rad * 0.6);
+        ctx.globalAlpha = 0.45;
+        px(ctx, gx, gy, rng() > 0.5 ? GOLD : MAGENTA, 3);
+        ctx.globalAlpha = 1;
+    }
+
+    ctx.globalAlpha = 0.35;
+    block(ctx, cx - 14, 58, 28, 3, BLACK);
+    ctx.globalAlpha = 1;
+
+    // boots peeking beneath the amp-stack torso
+    block(ctx, cx - 8, 52, 6, 6, DARK_GRAY);
+    block(ctx, cx + 2, 52, 6, 6, DARK_GRAY);
+
+    // amp-stack torso (wide cabinet body in place of the sheriff's duster)
+    block(ctx, cx - 14, 26, 28, 28 - slump, '#2a2a32');
+    block(ctx, cx - 16, 24, 32, 6, '#1a1a22'); // top cabinet lip
+    block(ctx, cx - 14, 44, 28, 2, GOLD); // gold trim band
+    ctx.fillStyle = ORANGE;
+    ctx.beginPath(); ctx.arc(cx, 36, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c86a2a';
+    ctx.beginPath(); ctx.arc(cx, 36, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = BLACK;
+    ctx.beginPath(); ctx.arc(cx, 36, 2, 0, Math.PI * 2); ctx.fill();
+
+    // cable-whip arms — flared for attack, drooped for stunned
+    let armRaise = 0;
+    if (pose === 'attack') armRaise = sub === 0 ? 6 : 12;
+    if (pose === 'stunned') armRaise = -4;
+    block(ctx, cx - 18, 26 - armRaise, 5, 16, '#1a1a22');
+    block(ctx, cx + 13, 26 - armRaise, 5, 16, '#1a1a22');
+    const flare = pose === 'attack' ? (sub === 0 ? 3 : 8) : 1;
+    for (let c = 0; c < 4; c++) {
+        const ox = 20 + c * 2 + Math.round(flare * (c / 4));
+        const oy = 40 - armRaise - c * 3;
+        px(ctx, cx - ox, oy, MAGENTA, 2);
+        px(ctx, cx + ox, oy, MAGENTA, 2);
+    }
+    block(ctx, cx - 18, 24 - armRaise, 5, 3, '#e8d0c0');
+    block(ctx, cx + 13, 24 - armRaise, 5, 3, '#e8d0c0');
+
+    // pale face
+    block(ctx, cx - 6, 12, 12, 10, '#e8d0c0');
+    if (pose === 'stunned') {
+        for (let s = 0; s < 3; s++) px(ctx, cx - 8 + s * 8, 4, GOLD, 2);
+    } else {
+        block(ctx, cx - 6, 16, 12, 2, '#2a2a2a'); // hat-shadowed eyes
+        ctx.strokeStyle = GOLD;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(cx + 3, 17, 3, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // black top hat with gold band
+    block(ctx, cx - 10, 7, 20, 3, '#0d0d0d');
+    block(ctx, cx - 6, 0, 12, 8, BLACK);
+    block(ctx, cx - 6, 4, 12, 1, GOLD);
+
+    ctx.restore();
+}
+
+/** 48×48, 3-frame shimmer: black void puddle, purple ripple rim. */
+function drawSilencePoolFrame(ctx, i) {
+    const cx = 24, cy = 24;
+
+    ctx.globalAlpha = 0.35 - i * 0.05;
+    ctx.fillStyle = PURPLE;
+    ctx.beginPath(); ctx.arc(cx, cy, 20, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = BLACK;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 17, 13, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.strokeStyle = DEEP_PURPLE;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 16, 12, 0, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.strokeStyle = PURPLE;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 10 + i * 2, 7 + i * 1.5, 0, 0, Math.PI * 2); ctx.stroke();
+
+    const rng = mulberry32(i * 97 + 41);
+    for (let s = 0; s < 6; s++) {
+        const ang = rng() * Math.PI * 2;
+        const rad = rng() * 12;
+        px(ctx, Math.round(cx + Math.cos(ang) * rad - 1), Math.round(cy + Math.sin(ang) * rad * 0.75 - 1), '#1a0a2e', 2);
+    }
+
+    ctx.fillStyle = 'rgba(200,160,255,0.6)';
+    const glintAng = (i / 3) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(glintAng) * 15, cy + Math.sin(glintAng) * 11, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+/** 16×16, 2-frame gold eighth-note glyph: dim (0), bright with glow (1). */
+function drawUiNoteFrame(ctx, i) {
+    const bright = i === 1;
+    const color = bright ? GOLD : '#7a5a10';
+
+    if (bright) {
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle = GOLD;
+        ctx.beginPath(); ctx.arc(8, 8, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(6, 12, 3, 2.2, -0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(8, 3, 2, 9);
+    ctx.beginPath();
+    ctx.moveTo(10, 3);
+    ctx.quadraticCurveTo(15, 5, 10, 8);
+    ctx.fill();
+}
+
+// ---------------------------------------------------------------------------
 // Animation table (Contract 1)
 // ---------------------------------------------------------------------------
 
@@ -832,6 +1104,19 @@ function createAnims(scene) {
 
     anim(scene, 'disco-glint', 'disco_ball', 0, 3, { frameRate: 4, repeat: -1 });
     anim(scene, 'light-twinkle', 'string_light', 0, 2, { frameRate: 3, repeat: -1 });
+
+    // Phase 3 (P3-A)
+    anim(scene, 'golem-walk', 'amp_golem', 0, 3, { frameRate: 5, repeat: -1 });
+    anim(scene, 'golem-cracked', 'amp_golem', 4, 5, { frameRate: 4, repeat: -1 });
+
+    anim(scene, 'phantom-float', 'feedback_phantom', 0, 3, { frameRate: 5, repeat: -1 });
+    anim(scene, 'phantom-tele', 'feedback_phantom', 4, 5, { frameRate: 8, repeat: 0 });
+
+    anim(scene, 'baron-idle', 'boss_baron', 0, 3, { frameRate: 4, repeat: -1 });
+    anim(scene, 'baron-attack', 'boss_baron', 4, 5, { frameRate: 6, repeat: -1 });
+    anim(scene, 'baron-stunned', 'boss_baron', 6, 7, { frameRate: 3, repeat: -1 });
+
+    anim(scene, 'pool-shimmer', 'silence_pool', 0, 2, { frameRate: 2, repeat: -1 });
 }
 
 // ---------------------------------------------------------------------------
@@ -872,6 +1157,13 @@ export const TextureFactory = {
         makeSheet(scene, 'portrait_elliot', 64, 64, 1, drawElliotPortrait);
         makeSheet(scene, 'portrait_dave', 64, 64, 1, drawDavePortrait);
         makeSheet(scene, 'scanline', 4, 4, 1, drawScanline);
+
+        // Phase 3 (P3-A)
+        makeSheet(scene, 'amp_golem', 32, 32, 6, drawAmpGolemFrame);
+        makeSheet(scene, 'feedback_phantom', 32, 32, 6, drawFeedbackPhantomFrame);
+        makeSheet(scene, 'boss_baron', 64, 64, 8, drawBaronFrame);
+        makeSheet(scene, 'silence_pool', 48, 48, 3, drawSilencePoolFrame);
+        makeSheet(scene, 'ui_note', 16, 16, 2, drawUiNoteFrame);
 
         createAnims(scene);
     }

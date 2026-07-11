@@ -4,9 +4,17 @@ import { AudioEngine } from '../audio/AudioEngine.js';
 import { Juice } from '../fx/Juice.js';
 
 const BASE_SPEED = 45;
+const LEVEL_SPEED_CAP = 2.2; // pinned: zomboid level-based speed factor caps at x2.2
+const ELITE_SPEED_MULT = 1.6;
+const ELITE_SCALE = 1.15;
+
+function speedFactorForLevel(level) {
+    return Math.min(LEVEL_SPEED_CAP, 1 + 0.08 * (level - 1));
+}
 
 export default class Zomboid extends Phaser.Physics.Arcade.Sprite {
-    constructor(scene, x, y, level) {
+    // opts: { elite }
+    constructor(scene, x, y, level, opts = {}) {
         super(scene, x, y, 'zomboid');
         scene.add.existing(this);
         scene.physics.add.existing(this);
@@ -14,16 +22,22 @@ export default class Zomboid extends Phaser.Physics.Arcade.Sprite {
         this.body.setSize(22, 22);
 
         this.level = level || 1;
-        this.speed = BASE_SPEED * (1 + 0.08 * (this.level - 1));
+        this.elite = !!(opts && opts.elite);
+        this.speed = BASE_SPEED * speedFactorForLevel(this.level) * (this.elite ? ELITE_SPEED_MULT : 1);
         this.converted = false;
         this._stunUntil = 0;
+
+        if (this.elite) {
+            this.setTint(PALETTE.gold);
+            this.setScale(ELITE_SCALE);
+        }
 
         if (scene.anims.exists('zomboid-walk')) this.play('zomboid-walk');
     }
 
     setLevel(level) {
         this.level = level;
-        this.speed = BASE_SPEED * (1 + 0.08 * (level - 1));
+        this.speed = BASE_SPEED * speedFactorForLevel(level) * (this.elite ? ELITE_SPEED_MULT : 1);
     }
 
     stun(ms) {
@@ -41,7 +55,9 @@ export default class Zomboid extends Phaser.Physics.Arcade.Sprite {
             this.setVelocity(0, 0);
             return;
         }
-        this.clearTint();
+        // Restore elite gold tint once the stun-gray tint lapses.
+        if (this.elite) this.setTint(PALETTE.gold);
+        else this.clearTint();
 
         const scene = this.scene;
         const player = scene.player;
@@ -55,12 +71,15 @@ export default class Zomboid extends Phaser.Physics.Arcade.Sprite {
         }
     }
 
-    convert() {
+    // opts: { onBeat } — see CONTRACTS.md P3-C
+    convert(opts = {}) {
         if (this.converted) return;
         this.converted = true;
+        const onBeat = !!(opts && opts.onBeat);
 
         const scene = this.scene;
         this.setTexture('dancer');
+        this.clearTint();
         const startFrame = Phaser.Math.Between(0, 5);
         if (scene.anims.exists('dancer-dance')) {
             this.play({ key: 'dancer-dance', startFrame });
@@ -73,6 +92,10 @@ export default class Zomboid extends Phaser.Physics.Arcade.Sprite {
         Juice.burst(scene, this.x, this.y, PALETTE.magenta);
         Juice.floatText(scene, this.x, this.y, 'GROOVE!', PALETTE.magenta);
         AudioEngine.sfx('convert');
+
+        if (scene.score && typeof scene.score.onConversion === 'function') {
+            scene.score.onConversion(this.x, this.y, { elite: this.elite, onBeat, kind: 'zomboid' });
+        }
 
         scene.time.delayedCall(3000, () => {
             if (!this.scene) return;

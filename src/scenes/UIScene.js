@@ -1,7 +1,8 @@
-// WS-E — see CONTRACTS.md Contract 6.
+// WS-E — see CONTRACTS.md Contract 6 + PHASE 3 CONTRACTS P3-E.
 // Transparent HUD overlay, driven purely by this.game.events.on(EVT.*).
-import { PALETTE, EVT, GAME_W, GAME_H } from '../config.js';
+import { PALETTE, EVT, GAME_W, GAME_H, COMBO_WINDOW_MS } from '../config.js';
 import { getZoneForLevel } from '../gfx/ZoneThemes.js';
+import { AudioEngine } from '../audio/AudioEngine.js';
 
 const HUD_Y = GAME_H - 12; // vertical center of the bottom 24px HUD strip
 const POWERUP_DURATION = { tonic: 5000, tape: 5000 };
@@ -19,10 +20,18 @@ export default class UIScene extends Phaser.Scene {
         this.levelBannerGroup = [];
         this._specialGlowTween = null;
 
+        this._bossName = 'BOSS';
+        this._comboShown = false;
+        this._comboDrainTween = null;
+        this._comboBarW = 90;
+        this._lastCombo = 0;
+
         this.buildHealth();
         this.buildVinylCounter();
         this.buildSpecialIndicator();
         this.buildBossBar();
+        this.buildScoreCombo();
+        this.buildBeatIndicator();
         this.buildCRT();
         this.bindEvents();
     }
@@ -134,7 +143,9 @@ export default class UIScene extends Phaser.Scene {
     // ------------------------------------------------------- LEVEL START --
 
     handleLevelStart = (payload) => {
-        const { level, zoneName, isBoss } = payload || {};
+        const { level, zoneName, isBoss, bossName } = payload || {};
+        this._bossName = (bossName || 'BOSS').toUpperCase();
+        if (this.bossLabel) this.bossLabel.setText(this._bossName);
         if (this.levelBannerGroup.length) {
             this.tweens.killTweensOf(this.levelBannerGroup);
             this.levelBannerGroup.forEach((o) => o.destroy());
@@ -152,7 +163,7 @@ export default class UIScene extends Phaser.Scene {
         const items = [title];
 
         if (isBoss) {
-            const warn = this.add.text(GAME_W / 2, 246, 'THE SILENT SHERIFF', {
+            const warn = this.add.text(GAME_W / 2, 246, this._bossName, {
                 fontFamily: 'monospace', fontStyle: 'bold', fontSize: '18px', color: '#ff3c3c'
             }).setOrigin(0.5).setAlpha(0).setDepth(60);
             items.push(warn);
@@ -180,7 +191,7 @@ export default class UIScene extends Phaser.Scene {
             .setStrokeStyle(2, 0xffffff, 0.5).setDepth(60).setVisible(false);
         this.bossBarFill = this.add.rectangle(x - 100, 20, 200, 14, 0xff3c3c)
             .setOrigin(0, 0.5).setDepth(61).setVisible(false);
-        this.bossLabel = this.add.text(x, 20, 'SILENT SHERIFF', {
+        this.bossLabel = this.add.text(x, 20, this._bossName, {
             fontFamily: 'monospace', fontStyle: 'bold', fontSize: '11px', color: '#ffffff'
         }).setOrigin(0.5).setDepth(62).setVisible(false);
     }
@@ -198,6 +209,123 @@ export default class UIScene extends Phaser.Scene {
         const frac = Phaser.Math.Clamp(hp / maxHp, 0, 1);
         this.bossBarFill.setSize(Math.max(1, 200 * frac), 14);
     };
+
+    // ------------------------------------------------------- SCORE/COMBO --
+
+    buildScoreCombo() {
+        const rx = GAME_W - 12;
+        this.scoreText = this.add.text(rx, 10, 'SCORE 000000', {
+            fontFamily: 'monospace', fontStyle: 'bold', fontSize: '16px', color: '#ffffff'
+        }).setOrigin(1, 0).setDepth(55);
+
+        this.comboText = this.add.text(rx, 32, '×0', {
+            fontFamily: 'monospace', fontStyle: 'bold', fontSize: '13px', color: '#ffd23c'
+        }).setOrigin(1, 0).setDepth(55).setVisible(false);
+
+        this.comboBarBg = this.add.rectangle(rx, 50, this._comboBarW, 5, 0x000000, 0.5)
+            .setOrigin(1, 0.5).setDepth(55).setVisible(false);
+        this.comboBarFill = this.add.rectangle(rx, 50, this._comboBarW, 5, PALETTE.gold)
+            .setOrigin(1, 0.5).setDepth(56).setVisible(false);
+    }
+
+    handleScore = (payload) => {
+        const { score, combo, onBeat } = payload || {};
+        if (typeof score === 'number') {
+            const clamped = Math.max(0, Math.min(999999, Math.floor(score)));
+            this.scoreText.setText('SCORE ' + String(clamped).padStart(6, '0'));
+            this.tweens.killTweensOf(this.scoreText);
+            this.scoreText.setScale(1);
+            this.tweens.add({
+                targets: this.scoreText, scale: 1.25, duration: 90, yoyo: true, ease: 'Quad.easeOut'
+            });
+        }
+        if (typeof combo === 'number') {
+            // Only a combo-ADVANCING award (combo went up) restarts the drain
+            // window; a combo-exempt award (vinyl/level-clear/boss) reported
+            // alongside an unchanged combo just re-syncs the display.
+            if (combo > this._lastCombo) this.restartComboDrain(combo);
+            else this.syncComboDisplay(combo);
+            this._lastCombo = combo;
+        }
+        if (onBeat) this.beatBurstFlash();
+    };
+
+    syncComboDisplay(combo) {
+        if (combo <= 1) {
+            this.comboText.setVisible(false);
+            this.comboBarBg.setVisible(false);
+            this.comboBarFill.setVisible(false);
+            this._comboShown = false;
+            return;
+        }
+        this._comboShown = true;
+        this.comboText.setText(`×${combo}`).setColor('#ffd23c').setAlpha(1).setVisible(true);
+        this.comboBarBg.setVisible(true);
+        this.comboBarFill.setVisible(true);
+    }
+
+    restartComboDrain(combo) {
+        this.syncComboDisplay(combo);
+        if (combo <= 1) {
+            if (this._comboDrainTween) {
+                this._comboDrainTween.stop();
+                this._comboDrainTween = null;
+            }
+            return;
+        }
+        if (this._comboDrainTween) this._comboDrainTween.stop();
+        this.comboBarFill.setSize(this._comboBarW, 5);
+        this._comboDrainTween = this.tweens.addCounter({
+            from: this._comboBarW, to: 0, duration: COMBO_WINDOW_MS, ease: 'Linear',
+            onUpdate: (tw) => this.comboBarFill.setSize(Math.max(0, tw.getValue()), 5)
+        });
+    }
+
+    handleCombo = (payload) => {
+        const { combo } = payload || {};
+        if (combo === 0) {
+            if (this._comboShown) this.flashComboBreak();
+            this.restartComboDrain(0);
+            this._lastCombo = 0;
+        }
+    };
+
+    flashComboBreak() {
+        AudioEngine.sfx('combo_break');
+        this.tweens.killTweensOf(this.comboText);
+        this.comboText.setColor('#ff3c3c').setAlpha(1);
+        this.tweens.add({
+            targets: this.comboText, alpha: { from: 1, to: 0 }, duration: 260, ease: 'Quad.easeIn'
+        });
+    }
+
+    // ------------------------------------------------------- BEAT INDICATOR --
+
+    buildBeatIndicator() {
+        this.beatNote = this.add.sprite(GAME_W / 2, HUD_Y, 'ui_note', 0).setDepth(50);
+        this.beatBurst = this.add.circle(GAME_W / 2, HUD_Y, 14, PALETTE.gold, 0).setDepth(49);
+        this.tweens.add({
+            targets: this.beatNote, alpha: { from: 0.55, to: 0.9 }, duration: 700,
+            yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+        });
+    }
+
+    handleBeat = () => {
+        this.tweens.killTweensOf(this.beatNote);
+        this.beatNote.setFrame(1).setScale(1).setAlpha(1);
+        this.tweens.add({
+            targets: this.beatNote, scale: 1.5, duration: 70, yoyo: true, ease: 'Quad.easeOut',
+            onComplete: () => this.beatNote.setFrame(0)
+        });
+    };
+
+    beatBurstFlash() {
+        this.tweens.killTweensOf(this.beatBurst);
+        this.beatBurst.setScale(0.6).setAlpha(0.8);
+        this.tweens.add({
+            targets: this.beatBurst, scale: 1.9, alpha: 0, duration: 280, ease: 'Quad.easeOut'
+        });
+    }
 
     // ---------------------------------------------------------------- CRT --
 
@@ -238,7 +366,10 @@ export default class UIScene extends Phaser.Scene {
             [EVT.POWERUP, this.handlePowerup],
             [EVT.LEVEL_START, this.handleLevelStart],
             [EVT.BOSS_HP, this.handleBossHp],
-            [EVT.GAME_OVER, this.handleGameOver]
+            [EVT.GAME_OVER, this.handleGameOver],
+            [EVT.SCORE, this.handleScore],
+            [EVT.COMBO, this.handleCombo],
+            [EVT.BEAT, this.handleBeat]
         ];
         this._listeners.forEach(([evt, fn]) => this.game.events.on(evt, fn));
         this.events.on('shutdown', this.handleShutdown, this);

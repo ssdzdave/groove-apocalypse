@@ -1,28 +1,44 @@
-// WS-C — see CONTRACTS.md Contract 5.
-import { TILE, GRID_W, GRID_H, PALETTE, CHARACTERS, MAX_LEVEL, isBossLevel, vinylsForLevel, EVT, DEPTH } from '../config.js';
+// WS-C — see CONTRACTS.md Contract 5 + PHASE 3 CONTRACTS P3-C.
+import {
+    TILE, GRID_W, GRID_H, PALETTE, CHARACTERS, MAX_LEVEL, isBossLevel, vinylsForLevel, EVT, DEPTH,
+    BOSS_IDS, bossForLevel, BOSS_NAMES
+} from '../config.js';
 import { getZoneForLevel } from '../gfx/ZoneThemes.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 import { generateLevel } from '../world/LevelGenerator.js';
 import { buildWorld, setPortalOpen } from '../world/WorldBuilder.js';
 import SilentSheriff from '../entities/SilentSheriff.js';
+import FeedbackBaron from '../entities/FeedbackBaron.js';
 import { Juice } from '../fx/Juice.js';
 import Player from '../entities/Player.js';
 import Zomboid from '../entities/Zomboid.js';
 import DroneBot from '../entities/DroneBot.js';
+import AmpGolem from '../entities/AmpGolem.js';
+import FeedbackPhantom from '../entities/FeedbackPhantom.js';
 import { PlayerProjectile, SilenceProjectile } from '../entities/Projectiles.js';
 import { Vinyl, BeerMug, TempoTonic, MysteryTape } from '../entities/Pickups.js';
+import { SilencePool } from '../world/SilencePool.js';
+import ScoreSystem from '../systems/ScoreSystem.js';
 
-const ZOMBOID_CAP = 10;
-const DRONE_CAP = 4;
 const SPAWN_MIN_DIST_TILES = 5;
+const GOLEM_CAP = 2, GOLEM_CAP_ENDLESS = 3, GOLEM_SPAWN_DELAY_MS = 10000;
+const PHANTOM_CAP = 2, PHANTOM_CAP_ENDLESS = 3, PHANTOM_SPAWN_DELAY_MS = 12000;
+const ONBEAT_AOE_RADIUS = 48;
+const GAMEPAD_DEADZONE = 0.25;
+
+function zomboidCapForLevel(n) { return Math.min(16, 10 + Math.floor(Math.max(0, n - 6) / 2)); }
+function droneCapForLevel(n) { return Math.min(7, 4 + Math.floor(Math.max(0, n - 6) / 3)); }
+function eliteChanceForLevel(n) { return n < 3 ? 0 : Math.min(0.35, 0.06 * (n - 2)); }
 
 export default class GameScene extends Phaser.Scene {
     constructor() { super('GameScene'); }
 
     create(data) {
         this.charId = (data && data.charId) || CHARACTERS.ELLIOT;
-        this.conversions = 0;
+        this.endless = !!(data && data.endless);
+        this.conversions = (data && data.carry && typeof data.carry.conversions === 'number') ? data.carry.conversions : 0;
         this.boss = null;
+        this._currentBossName = null;
         // Phaser reuses the scene instance across runs — clear stale refs
         this.player = null;
         this._levelColliders = [];
@@ -35,6 +51,10 @@ export default class GameScene extends Phaser.Scene {
         this._world = null;
         this._bossOverlaps = [];
         this._portalOverlap = null;
+        this.score = null;
+        this._beatListener = null;
+        this._prevPadSpecial = false;
+        this._prevPadStart = false;
 
         this.keys = {
             up: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
@@ -46,7 +66,9 @@ export default class GameScene extends Phaser.Scene {
             S: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
             D: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
             space: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
-            E: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E)
+            E: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E),
+            esc: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC),
+            P: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P)
         };
 
         this.physics.world.setBounds(0, 0, GRID_W * TILE, GRID_H * TILE);
@@ -55,6 +77,9 @@ export default class GameScene extends Phaser.Scene {
         this.silenceProjectiles = this.physics.add.group({ classType: SilenceProjectile, maxSize: 30, runChildUpdate: true });
         this.zomboids = this.physics.add.group({ runChildUpdate: true });
         this.droneBots = this.physics.add.group({ runChildUpdate: true });
+        this.golems = this.physics.add.group({ runChildUpdate: true });
+        this.phantoms = this.physics.add.group({ runChildUpdate: true });
+        this.silencePools = this.physics.add.staticGroup();
         this.pickups = this.physics.add.group();
         this.vinyls = this.physics.add.group();
 
@@ -63,8 +88,13 @@ export default class GameScene extends Phaser.Scene {
 
         Juice.addCameraFX(this);
 
+        this.score = new ScoreSystem(this, (data && data.carry) || null);
+
         this._dataListener = (parent, value) => {
             if (value) {
+                const bx = this.boss ? this.boss.x : (this._world && this._world.portal ? this._world.portal.x : 0);
+                const by = this.boss ? this.boss.y : (this._world && this._world.portal ? this._world.portal.y : 0);
+                if (this.score) this.score.onBossDefeated(bx, by);
                 this.boss = null;
                 this._openPortal();
                 this._updateIntensity();
@@ -78,18 +108,24 @@ export default class GameScene extends Phaser.Scene {
             callback: () => this._logDebugState()
         });
 
+        this._beatListener = () => this._pulseOnBeat();
+        this.game.events.on(EVT.BEAT, this._beatListener);
+
         this.events.on('shutdown', this._onShutdown, this);
 
-        this.startLevel(1);
+        const startLvl = (data && data.startLevel) || 1;
+        this.startLevel(startLvl);
 
         // UIScene is launched alongside this scene and attaches its listeners a
-        // tick after startLevel(1) emitted the initial HUD events — re-emit them.
+        // tick after startLevel() emitted the initial HUD events — re-emit them.
         this.time.delayedCall(150, () => {
             if (this._gameOverFired) return;
             const zone = this._zone;
-            this.game.events.emit(EVT.LEVEL_START, {
-                level: this.currentLevel, zoneId: zone.id, zoneName: zone.name, isBoss: isBossLevel(this.currentLevel)
-            });
+            const isBoss = isBossLevel(this.currentLevel);
+            this.game.events.emit(EVT.LEVEL_START, Object.assign(
+                { level: this.currentLevel, zoneId: zone.id, zoneName: zone.name, isBoss },
+                isBoss ? { bossName: this._currentBossName } : {}
+            ));
             this.game.events.emit(EVT.VINYLS, this._vinylsCollected, this._vinylsNeeded);
             this.game.events.emit(EVT.PLAYER_HP, this.player.hp, this.player.maxHp);
             if (this.boss && this.boss.active) this.game.events.emit(EVT.BOSS_HP, this.boss.hp, this.boss.maxHp);
@@ -122,6 +158,9 @@ export default class GameScene extends Phaser.Scene {
 
         this._clearGroup(this.zomboids);
         this._clearGroup(this.droneBots);
+        this._clearGroup(this.golems);
+        this._clearGroup(this.phantoms);
+        this._clearGroup(this.silencePools);
         this._clearGroup(this.pickups);
         this._clearGroup(this.vinyls);
         this._deactivateAll(this.playerProjectiles);
@@ -153,6 +192,8 @@ export default class GameScene extends Phaser.Scene {
             this.physics.add.collider(this.player, world.wallsGroup),
             this.physics.add.collider(this.zomboids, world.wallsGroup),
             this.physics.add.collider(this.droneBots, world.wallsGroup),
+            this.physics.add.collider(this.golems, world.wallsGroup),
+            this.physics.add.collider(this.phantoms, world.wallsGroup),
             this.physics.add.collider(this.playerProjectiles, world.wallsGroup, (p) => p.deactivate()),
             this.physics.add.collider(this.silenceProjectiles, world.wallsGroup, (p) => p.deactivate())
         );
@@ -172,10 +213,13 @@ export default class GameScene extends Phaser.Scene {
 
         this.data.set('bossDefeated', false);
 
+        let bossId = null;
         if (isBoss) {
+            bossId = bossForLevel(n);
             const bx = levelData.bossTile.tx * TILE + TILE / 2;
             const by = levelData.bossTile.ty * TILE + TILE / 2;
-            this.boss = new SilentSheriff(this, bx, by);
+            const BossClass = bossId === BOSS_IDS.BARON ? FeedbackBaron : SilentSheriff;
+            this.boss = new BossClass(this, bx, by);
             this.physics.add.collider(this.boss, world.wallsGroup);
             const bossOverlap = this.physics.add.overlap(this.playerProjectiles, this.boss, (proj, boss) => {
                 if (boss.stunned) boss.onSpecialHit();
@@ -183,12 +227,27 @@ export default class GameScene extends Phaser.Scene {
             });
             this._bossOverlaps.push(bossOverlap);
         }
+        this._currentBossName = isBoss ? BOSS_NAMES[bossId] : null;
+
+        // Silence pools: non-boss L5+ scaling count, or 2 fixed in Baron arenas.
+        let poolCount = 0;
+        if (isBoss) {
+            if (bossId === BOSS_IDS.BARON) poolCount = 2;
+        } else if (n >= 5) {
+            poolCount = Math.min(1 + Math.floor((n - 5) / 2), 4);
+        }
+        if (poolCount > 0 && typeof SilencePool.placePools === 'function') {
+            SilencePool.placePools(this, levelData, poolCount);
+        }
 
         setPortalOpen(world.portal, false);
 
         this._startSpawnTimers(n);
 
-        this.game.events.emit(EVT.LEVEL_START, { level: n, zoneId: zone.id, zoneName: zone.name, isBoss });
+        this.game.events.emit(EVT.LEVEL_START, Object.assign(
+            { level: n, zoneId: zone.id, zoneName: zone.name, isBoss },
+            isBoss ? { bossName: this._currentBossName } : {}
+        ));
         this.game.events.emit(EVT.VINYLS, this._vinylsCollected, this._vinylsNeeded);
         this.game.events.emit(EVT.PLAYER_HP, this.player.hp, this.player.maxHp);
         if (!isBoss) this.game.events.emit(EVT.BOSS_HP, null, null);
@@ -208,7 +267,9 @@ export default class GameScene extends Phaser.Scene {
         this._portalEntering = true;
         AudioEngine.sfx('levelup');
         const n = this.currentLevel;
-        if (n >= MAX_LEVEL) {
+        if (this.score) this.score.onLevelClear(n);
+        // D5: endless mode never wins via the portal — levels just keep counting up.
+        if (!this.endless && n >= MAX_LEVEL) {
             this.winGame();
         } else {
             this.startLevel(n + 1);
@@ -218,10 +279,16 @@ export default class GameScene extends Phaser.Scene {
     // ---------------------------------------------------------------- spawning
 
     _startSpawnTimers(n) {
-        const spawnDelay = Math.max(700, 2000 - 150 * n);
+        const spawnDelay = Math.max(450, 2000 - 150 * n);
         this._zomboidTimer = this.time.addEvent({ delay: spawnDelay, loop: true, callback: () => this._spawnZomboid(n) });
         if (n >= 2) {
             this._droneTimer = this.time.addEvent({ delay: 8000, loop: true, callback: () => this._spawnDrone(n) });
+        }
+        if (n >= 4) {
+            this._golemTimer = this.time.addEvent({ delay: GOLEM_SPAWN_DELAY_MS, loop: true, callback: () => this._spawnGolem(n) });
+        }
+        if (n >= 5) {
+            this._phantomTimer = this.time.addEvent({ delay: PHANTOM_SPAWN_DELAY_MS, loop: true, callback: () => this._spawnPhantom(n) });
         }
         this._beerTimer = this.time.addEvent({ delay: 9000, loop: true, callback: () => this._spawnPickup(BeerMug, 'beer') });
         this._tonicTimer = this.time.addEvent({ delay: 12000, loop: true, callback: () => this._spawnPickup(TempoTonic, 'tonic') });
@@ -229,8 +296,9 @@ export default class GameScene extends Phaser.Scene {
     }
 
     _killLevelTimers() {
-        [this._zomboidTimer, this._droneTimer, this._beerTimer, this._tonicTimer, this._tapeTimer].forEach((t) => t && t.remove(false));
-        this._zomboidTimer = this._droneTimer = this._beerTimer = this._tonicTimer = this._tapeTimer = null;
+        [this._zomboidTimer, this._droneTimer, this._golemTimer, this._phantomTimer, this._beerTimer, this._tonicTimer, this._tapeTimer]
+            .forEach((t) => t && t.remove(false));
+        this._zomboidTimer = this._droneTimer = this._golemTimer = this._phantomTimer = this._beerTimer = this._tonicTimer = this._tapeTimer = null;
     }
 
     _pickSpawnTile() {
@@ -247,21 +315,44 @@ export default class GameScene extends Phaser.Scene {
     }
 
     _spawnZomboid(n) {
+        const cap = zomboidCapForLevel(n);
         const active = this.zomboids.getChildren().filter((z) => z.active && !z.converted).length;
-        if (active >= ZOMBOID_CAP) return;
+        if (active >= cap) return;
         const tile = this._pickSpawnTile();
         if (!tile) return;
         const x = tile.tx * TILE + TILE / 2, y = tile.ty * TILE + TILE / 2;
-        this.zomboids.add(new Zomboid(this, x, y, n));
+        const elite = Math.random() < eliteChanceForLevel(n);
+        this.zomboids.add(new Zomboid(this, x, y, n, { elite }));
     }
 
     _spawnDrone(n) {
+        const cap = droneCapForLevel(n);
         const active = this.droneBots.getChildren().filter((d) => d.active).length;
-        if (active >= DRONE_CAP) return;
+        if (active >= cap) return;
         const tile = this._pickSpawnTile();
         if (!tile) return;
         const x = tile.tx * TILE + TILE / 2, y = tile.ty * TILE + TILE / 2;
         this.droneBots.add(new DroneBot(this, x, y, n));
+    }
+
+    _spawnGolem(n) {
+        const cap = this.endless ? GOLEM_CAP_ENDLESS : GOLEM_CAP;
+        const active = this.golems.getChildren().filter((g) => g.active).length;
+        if (active >= cap) return;
+        const tile = this._pickSpawnTile();
+        if (!tile) return;
+        const x = tile.tx * TILE + TILE / 2, y = tile.ty * TILE + TILE / 2;
+        this.golems.add(new AmpGolem(this, x, y, n));
+    }
+
+    _spawnPhantom(n) {
+        const cap = this.endless ? PHANTOM_CAP_ENDLESS : PHANTOM_CAP;
+        const active = this.phantoms.getChildren().filter((p) => p.active).length;
+        if (active >= cap) return;
+        const tile = this._pickSpawnTile();
+        if (!tile) return;
+        const x = tile.tx * TILE + TILE / 2, y = tile.ty * TILE + TILE / 2;
+        this.phantoms.add(new FeedbackPhantom(this, x, y, n));
     }
 
     _spawnPickup(Cls, type) {
@@ -282,9 +373,12 @@ export default class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.player, this.vinyls, (player, vinyl) => this._collectVinyl(vinyl));
         this.physics.add.overlap(this.player, this.pickups, (player, pickup) => this._collectPickup(pickup));
         this.physics.add.overlap(this.player, this.zomboids, (player, z) => this._zomboidContact(z));
+        this.physics.add.overlap(this.player, this.golems, (player, g) => this._golemContact(g));
         this.physics.add.overlap(this.player, this.silenceProjectiles, (player, proj) => this._silenceHit(proj));
         this.physics.add.overlap(this.playerProjectiles, this.zomboids, (proj, z) => this._projectileHitZomboid(proj, z));
         this.physics.add.overlap(this.playerProjectiles, this.droneBots, (proj, d) => this._projectileHitDrone(proj, d));
+        this.physics.add.overlap(this.playerProjectiles, this.golems, (proj, g) => this._projectileHitGolem(proj, g));
+        this.physics.add.overlap(this.playerProjectiles, this.phantoms, (proj, p) => this._projectileHitPhantom(proj, p));
     }
 
     _collectVinyl(vinyl) {
@@ -295,6 +389,7 @@ export default class GameScene extends Phaser.Scene {
         this.game.events.emit(EVT.VINYLS, this._vinylsCollected, this._vinylsNeeded);
         AudioEngine.sfx('pickup_vinyl');
         Juice.floatText(this, x, y, '+♪', PALETTE.gold);
+        if (this.score) this.score.onVinyl(x, y);
     }
 
     _collectPickup(pickup) {
@@ -322,6 +417,15 @@ export default class GameScene extends Phaser.Scene {
         this.player.setVelocity(Math.cos(angle) * 220, Math.sin(angle) * 220);
     }
 
+    // Ambiguity resolution: P3-D doesn't spell out a golem attack; treated like a
+    // heavier zomboid (chases + contact-damages) since it has no other means to hurt the player.
+    _golemContact(g) {
+        if (!g.active) return;
+        this.player.damage(1);
+        const angle = Phaser.Math.Angle.Between(g.x, g.y, this.player.x, this.player.y);
+        this.player.setVelocity(Math.cos(angle) * 220, Math.sin(angle) * 220);
+    }
+
     _silenceHit(proj) {
         if (!proj.active) return;
         proj.deactivate();
@@ -330,13 +434,42 @@ export default class GameScene extends Phaser.Scene {
 
     _projectileHitZomboid(proj, z) {
         if (!proj.active || !z.active || z.converted) return;
-        z.convert();
+        const onBeat = !!proj.onBeat;
+        const ix = z.x, iy = z.y;
+        z.convert({ onBeat });
+        // D1/P3-C: on-beat impact conversion mini-AoE — convert other nearby zomboids too.
+        if (onBeat) {
+            this.zomboids.getChildren().forEach((other) => {
+                if (other === z || !other.active || other.converted) return;
+                const d = Phaser.Math.Distance.Between(ix, iy, other.x, other.y);
+                if (d <= ONBEAT_AOE_RADIUS) other.convert({ onBeat: true });
+            });
+        }
         if (!proj.piercing) proj.deactivate();
     }
 
     _projectileHitDrone(proj, d) {
         if (!proj.active || !d.active) return;
+        const onBeat = !!proj.onBeat;
+        const x = d.x, y = d.y;
         d.hit();
+        if (this.score) this.score.onKill(x, y, { kind: 'drone', onBeat });
+        if (!proj.piercing) proj.deactivate();
+    }
+
+    // WS-D's AmpGolem.hit(proj) reads proj.onBeat itself (2 dmg on-beat) and owns its
+    // own score.onConversion call on death — we just forward the projectile.
+    _projectileHitGolem(proj, g) {
+        if (!proj.active || !g.active) return;
+        if (typeof g.hit === 'function') g.hit(proj);
+        if (!proj.piercing) proj.deactivate();
+    }
+
+    // Ambiguity resolution: while phased the phantom is immune — the projectile passes
+    // through untouched (no deactivate) rather than being consumed for no effect.
+    _projectileHitPhantom(proj, p) {
+        if (!proj.active || !p.active || p.phased) return;
+        if (typeof p.convert === 'function') p.convert({ onBeat: !!proj.onBeat });
         if (!proj.piercing) proj.deactivate();
     }
 
@@ -345,6 +478,8 @@ export default class GameScene extends Phaser.Scene {
     stunAllEnemies(ms) {
         this.zomboids.getChildren().forEach((z) => z.active && typeof z.stun === 'function' && z.stun(ms));
         this.droneBots.getChildren().forEach((d) => d.active && typeof d.stun === 'function' && d.stun(ms));
+        this.golems.getChildren().forEach((g) => g.active && typeof g.stun === 'function' && g.stun(ms));
+        this.phantoms.getChildren().forEach((p) => p.active && typeof p.stun === 'function' && p.stun(ms));
         if (this.boss && this.boss.active) this.boss.stun(ms);
     }
 
@@ -355,7 +490,13 @@ export default class GameScene extends Phaser.Scene {
         this._gameOverFired = true;
         AudioEngine.sfx('gameover');
         AudioEngine.stopMusic();
-        this.game.events.emit(EVT.GAME_OVER, { won: false, level: this.currentLevel, conversions: this.conversions, charId: this.charId });
+        this.game.events.emit(EVT.GAME_OVER, {
+            won: false, level: this.currentLevel, conversions: this.conversions, charId: this.charId,
+            score: this.score ? this.score.score : 0,
+            maxCombo: this.score ? this.score.maxCombo : 0,
+            endless: this.endless,
+            canContinue: false // won && !this.endless, won is always false here
+        });
         this.scene.pause();
     }
 
@@ -364,21 +505,90 @@ export default class GameScene extends Phaser.Scene {
         this._gameOverFired = true;
         AudioEngine.sfx('win');
         AudioEngine.startMusic('win');
-        this.game.events.emit(EVT.GAME_OVER, { won: true, level: MAX_LEVEL, conversions: this.conversions, charId: this.charId });
+        this.game.events.emit(EVT.GAME_OVER, {
+            won: true, level: this.currentLevel, conversions: this.conversions, charId: this.charId,
+            score: this.score ? this.score.score : 0,
+            maxCombo: this.score ? this.score.maxCombo : 0,
+            endless: this.endless,
+            canContinue: !this.endless // won (true) && !this.endless
+        });
         this.scene.pause();
     }
 
     // ---------------------------------------------------------------- update loop
+
+    getMoveVector() {
+        const keys = this.keys;
+        let dx = 0, dy = 0;
+        if (keys) {
+            if ((keys.left && keys.left.isDown) || (keys.A && keys.A.isDown)) dx -= 1;
+            if ((keys.right && keys.right.isDown) || (keys.D && keys.D.isDown)) dx += 1;
+            if ((keys.up && keys.up.isDown) || (keys.W && keys.W.isDown)) dy -= 1;
+            if ((keys.down && keys.down.isDown) || (keys.S && keys.S.isDown)) dy += 1;
+        }
+        if (dx === 0 && dy === 0) {
+            const pad = this._getPad();
+            if (pad) {
+                let px = pad.leftStick ? pad.leftStick.x : 0;
+                let py = pad.leftStick ? pad.leftStick.y : 0;
+                if (Math.abs(px) < GAMEPAD_DEADZONE) px = 0;
+                if (Math.abs(py) < GAMEPAD_DEADZONE) py = 0;
+                if (px !== 0 || py !== 0) {
+                    dx = px; dy = py;
+                } else {
+                    if (pad.left) dx -= 1;
+                    if (pad.right) dx += 1;
+                    if (pad.up) dy -= 1;
+                    if (pad.down) dy += 1;
+                }
+            }
+        }
+        const len = Math.hypot(dx, dy);
+        if (len > 1) { dx /= len; dy /= len; }
+        return { x: dx, y: dy };
+    }
+
+    _getPad() {
+        if (!this.input.gamepad) return undefined;
+        return this.input.gamepad.getPad(0);
+    }
+
+    _tryPause() {
+        if (this._gameOverFired) return false;
+        if (this.scene.isActive('PauseScene')) return false;
+        this.scene.launch('PauseScene');
+        this.scene.pause();
+        AudioEngine.setDucked(true);
+        AudioEngine.sfx('pause');
+        return true;
+    }
 
     update(time, delta) {
         if (!this.player || !this.player.active || this._gameOverFired) return;
 
         this.player.update(time, delta);
 
-        if (Phaser.Input.Keyboard.JustDown(this.keys.space)) this.player.shoot();
-        if (Phaser.Input.Keyboard.JustDown(this.keys.E)) this.player.special();
+        const pad = this._getPad();
+        const padShoot = !!(pad && ((pad.buttons[0] && pad.buttons[0].pressed) || (pad.buttons[2] && pad.buttons[2].pressed)));
+        const padSpecial = !!(pad && ((pad.buttons[1] && pad.buttons[1].pressed) || (pad.buttons[7] && pad.buttons[7].pressed)));
+        const padStart = !!(pad && pad.buttons[9] && pad.buttons[9].pressed);
+
+        if (Phaser.Input.Keyboard.JustDown(this.keys.space) || padShoot) this.player.shoot();
+        if (Phaser.Input.Keyboard.JustDown(this.keys.E) || (padSpecial && !this._prevPadSpecial)) this.player.special();
+        this._prevPadSpecial = padSpecial;
+
+        if (Phaser.Input.Keyboard.JustDown(this.keys.esc) || Phaser.Input.Keyboard.JustDown(this.keys.P) || (padStart && !this._prevPadStart)) {
+            this._prevPadStart = padStart;
+            if (this._tryPause()) return;
+        } else {
+            this._prevPadStart = padStart;
+        }
 
         if (this.boss && this.boss.active) this.boss.update(time, delta);
+
+        if (this.player && this.silencePools) {
+            this.player.setSilenced(this.physics.overlap(this.player, this.silencePools));
+        }
 
         if (!isBossLevel(this.currentLevel) && this._world && this._world.portal) {
             if (!this._world.portal.getData('open') && this._vinylsCollected >= this._vinylsNeeded) {
@@ -408,6 +618,31 @@ export default class GameScene extends Phaser.Scene {
         AudioEngine.setIntensity(Math.min(1, Math.max(0, t)));
     }
 
+    // ---------------------------------------------------------------- beat visuals
+
+    // 120ms scale pulse (1.0 -> 1.06 -> 1.0) on active zomboids/golems/portal. Cheap
+    // manual tween — kills any in-flight pulse tween first so rapid beats don't compound scale.
+    _pulseOnBeat() {
+        const pulse = (obj) => {
+            if (!obj || !obj.active) return;
+            const base = obj._beatBaseScale != null ? obj._beatBaseScale : obj.scale;
+            obj._beatBaseScale = base;
+            if (obj._beatPulseTween) { obj._beatPulseTween.remove(); obj._beatPulseTween = null; }
+            obj.setScale(base);
+            obj._beatPulseTween = this.tweens.add({
+                targets: obj,
+                scale: base * 1.06,
+                duration: 60,
+                yoyo: true,
+                ease: 'Sine.easeInOut',
+                onComplete: () => { if (obj.active) obj.setScale(base); obj._beatPulseTween = null; }
+            });
+        };
+        this.zomboids.getChildren().forEach(pulse);
+        this.golems.getChildren().forEach(pulse);
+        if (this._world && this._world.portal) pulse(this._world.portal);
+    }
+
     // ---------------------------------------------------------------- debug API (pinned)
 
     getDebugState() {
@@ -420,13 +655,24 @@ export default class GameScene extends Phaser.Scene {
             bossHp: this.boss && this.boss.active ? this.boss.hp : null,
             charId: this.charId,
             x: this.player ? Math.round(this.player.x) : 0,
-            y: this.player ? Math.round(this.player.y) : 0
+            y: this.player ? Math.round(this.player.y) : 0,
+            score: this.score ? this.score.score : 0,
+            combo: this.score ? this.score.combo : 0,
+            endless: this.endless,
+            paused: this.scene.isPaused()
         };
     }
 
     debugTeleport(tx, ty) {
         if (!this.player) return;
         this.player.setPosition(tx * TILE + TILE / 2, ty * TILE + TILE / 2);
+    }
+
+    // Opens the portal and teleports the player onto it — quick way to skip a level.
+    debugSkipLevel() {
+        if (!this._world || !this._world.portal || !this.player) return;
+        setPortalOpen(this._world.portal, true);
+        this.player.setPosition(this._world.portal.x, this._world.portal.y);
     }
 
     _logDebugState() {
@@ -446,6 +692,15 @@ export default class GameScene extends Phaser.Scene {
         if (this._dataListener) {
             this.data.events.off('changedata-bossDefeated', this._dataListener, this);
             this._dataListener = null;
+        }
+        // game.events outlives the scene — must be removed explicitly.
+        if (this._beatListener) {
+            this.game.events.off(EVT.BEAT, this._beatListener);
+            this._beatListener = null;
+        }
+        if (this.score) {
+            this.score.destroy();
+            this.score = null;
         }
     }
 }

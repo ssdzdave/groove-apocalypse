@@ -229,6 +229,10 @@ export class MusicGenerator {
         this.nextStepTime = 0;
         this.stepCount = 0;
         this.noiseBuffer = null;
+        // Set by AudioEngine on the currently-active generator only (detached on
+        // crossfade-out); invoked with the PRE-SWING base time of every quarter-note
+        // (stepIndex % 4 === 0) step as it is scheduled ahead of playback.
+        this.onBeatScheduled = null;
     }
 
     start(mood) {
@@ -266,6 +270,16 @@ export class MusicGenerator {
         const cfg = this.cfg;
         const stepIndex = stepCount % 16;
         const barIndex = Math.floor(stepCount / 16) % cfg.progression.length;
+
+        // Quarter-note beat broadcast — every 4th 16th step, using the UNSWUNG
+        // base time (baseTime), before the swing offset below is applied.
+        if (stepIndex % 4 === 0 && typeof this.onBeatScheduled === 'function') {
+            const beatIndex = Math.floor(stepCount / 4);
+            try {
+                this.onBeatScheduled(beatIndex, baseTime, cfg.bpm);
+            } catch (e) { /* ignore */ }
+        }
+
         const swingOffset = (stepIndex % 2 === 1) ? this.stepDur * SWING_AMOUNT : 0;
         const t = baseTime + swingOffset;
         const chordRootMidi = cfg.rootMidi + 24 + cfg.progression[barIndex];

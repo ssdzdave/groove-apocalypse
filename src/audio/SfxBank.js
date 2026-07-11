@@ -1,4 +1,4 @@
-// WS-B private helper — 17 synthesized one-shot SFX. Zero Phaser usage.
+// WS-B private helper — 23 synthesized one-shot SFX. Zero Phaser usage.
 // Consumed only by AudioEngine.js, which dispatches SfxBank.play(ctx, out, name).
 
 function cleanupOnEnd(node) {
@@ -288,6 +288,95 @@ function sfxUiSelect(ctx, out) {
     tone(ctx, out, { type: 'square', freq: NOTE(7), start: t0 + 0.05, attack: 0.001, decay: 0.08, peak: 0.14, filterFreq: 3800 });
 }
 
+// ---- Phase 3 (P3-B) additions ----
+
+// Bright, tight zap-chime — fires often on every on-beat hit, so kept very
+// short/cheap: a single high square blip + a quick shimmer harmonic.
+function sfxOnbeat(ctx, out) {
+    const t0 = ctx.currentTime;
+    tone(ctx, out, { type: 'square', freq: NOTE(19), start: t0, attack: 0.001, decay: 0.05, peak: 0.18, filterFreq: 6000 });
+    tone(ctx, out, { type: 'sine', freq: NOTE(31), start: t0, attack: 0.001, decay: 0.03, peak: 0.08 });
+}
+
+// Reversed-feel whoosh (rising filtered noise swell, cut abruptly like tape
+// reverse) + a short digital static blip landing right at the teleport.
+function sfxPhantomTele(ctx, out) {
+    const t0 = ctx.currentTime;
+    const buf = makeNoiseBuffer(ctx, 0.4);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'bandpass';
+    filt.frequency.setValueAtTime(200, t0);
+    filt.frequency.exponentialRampToValueAtTime(3200, t0 + 0.22);
+    filt.Q.value = 1.4;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0004, t0);
+    gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.2);
+    gain.gain.linearRampToValueAtTime(0.0001, t0 + 0.24);
+    src.connect(filt);
+    filt.connect(gain);
+    gain.connect(out);
+    src.start(t0);
+    src.stop(t0 + 0.25);
+    cleanupOnEnd(src);
+    // static blip landing on the teleport
+    const blipBuf = makeNoiseBuffer(ctx, 0.08);
+    noiseHit(ctx, out, blipBuf, { start: t0 + 0.21, attack: 0.001, decay: 0.06, peak: 0.16, filterType: 'highpass', filterFreq: 5000, Q: 0.8 });
+}
+
+// Deep boom (sub sine sweep) + a rattly noise burst simulating a blown
+// speaker cabinet shaking.
+function sfxGolemShockwave(ctx, out) {
+    const t0 = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(95, t0);
+    osc.frequency.exponentialRampToValueAtTime(28, t0 + 0.5);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.5, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.6);
+    osc.connect(gain);
+    gain.connect(out);
+    osc.start(t0);
+    osc.stop(t0 + 0.62);
+    cleanupOnEnd(osc);
+    const buf = makeNoiseBuffer(ctx, 0.5);
+    noiseHit(ctx, out, buf, { start: t0, attack: 0.008, decay: 0.4, peak: 0.22, filterType: 'bandpass', filterFreq: 250, freqEnd: 90, Q: 0.9 });
+    // rattle: rapid low-passed noise ticks
+    for (let i = 0; i < 5; i++) {
+        const rt = t0 + 0.03 + i * 0.045;
+        noiseHit(ctx, out, buf, { start: rt, attack: 0.002, decay: 0.05, peak: 0.09, filterType: 'bandpass', filterFreq: 900, Q: 2 });
+    }
+}
+
+// Soft two-note descending blip for opening the pause menu.
+function sfxPause(ctx, out) {
+    const t0 = ctx.currentTime;
+    tone(ctx, out, { type: 'triangle', freq: NOTE(4), start: t0, attack: 0.004, decay: 0.1, peak: 0.14, filterFreq: 2800 });
+    tone(ctx, out, { type: 'triangle', freq: NOTE(-1), start: t0 + 0.09, attack: 0.004, decay: 0.14, peak: 0.13, filterFreq: 2400 });
+}
+
+// Short, sad record-scratch-ish drop: reversed-pitch noise scrub + a
+// downward-bending tone, like the needle got yanked.
+function sfxComboBreak(ctx, out) {
+    const t0 = ctx.currentTime;
+    const buf = makeNoiseBuffer(ctx, 0.3);
+    noiseHit(ctx, out, buf, { start: t0, attack: 0.001, decay: 0.18, peak: 0.2, filterType: 'bandpass', filterFreq: 1800, freqEnd: 300, Q: 3 });
+    tone(ctx, out, { type: 'sawtooth', freq: NOTE(-2), freqEnd: NOTE(-16), start: t0 + 0.01, attack: 0.001, decay: 0.22, peak: 0.16, filterFreq: 1200 });
+}
+
+// Sparkly ascending fanfare (~1s) for a new high score.
+function sfxHighscore(ctx, out) {
+    const t0 = ctx.currentTime;
+    [0, 4, 7, 12, 16, 19].forEach((iv, i) => {
+        tone(ctx, out, { type: 'triangle', freq: NOTE(iv), start: t0 + i * 0.09, attack: 0.003, decay: 0.24, peak: 0.18, filterFreq: 4200 });
+        tone(ctx, out, { type: 'square', freq: NOTE(iv + 12), start: t0 + i * 0.09, attack: 0.002, decay: 0.1, peak: 0.05, filterFreq: 5000 });
+    });
+    tone(ctx, out, { type: 'sine', freq: NOTE(24), start: t0 + 0.55, attack: 0.005, decay: 0.5, peak: 0.16, filterFreq: 5500 });
+}
+
 const SFX_MAP = {
     shoot_chord: sfxShootChord,
     shoot_loop: sfxShootLoop,
@@ -305,7 +394,13 @@ const SFX_MAP = {
     win: sfxWin,
     gameover: sfxGameover,
     ui_move: sfxUiMove,
-    ui_select: sfxUiSelect
+    ui_select: sfxUiSelect,
+    onbeat: sfxOnbeat,
+    phantom_tele: sfxPhantomTele,
+    golem_shockwave: sfxGolemShockwave,
+    pause: sfxPause,
+    combo_break: sfxComboBreak,
+    highscore: sfxHighscore
 };
 
 export const SfxBank = {

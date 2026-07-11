@@ -1,5 +1,5 @@
-// WS-A — see CONTRACTS.md Contract 2
-import { PALETTE, isBossLevel } from '../config.js';
+// WS-A — see CONTRACTS.md Contract 2 (+ P3-A: baron-lair variant)
+import { PALETTE, isBossLevel, bossForLevel, BOSS_IDS } from '../config.js';
 
 // Non-boss levels cycle through these zones in order encountered.
 const CYCLE = ['dunes', 'chrome', 'glitter'];
@@ -52,6 +52,10 @@ function nonBossIndex(level) {
 
 export function getZoneForLevel(level) {
     if (isBossLevel(level)) {
+        if (bossForLevel(level) === BOSS_IDS.BARON) {
+            // P3-A: baron-lair variant — same tileKey/musicMood, distinct name + accent
+            return { ...ZONES.lair, name: "The Baron's Feedback Chamber", accent: PALETTE.gold };
+        }
         return { ...ZONES.lair };
     }
     const cycleIdx = nonBossIndex(level) % CYCLE.length;

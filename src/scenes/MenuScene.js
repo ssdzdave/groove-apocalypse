@@ -1,8 +1,12 @@
-// WS-E — see CONTRACTS.md Contract 6.
+// WS-E — see CONTRACTS.md Contract 6 + PHASE 3 CONTRACTS P3-E.
 // Vaporwave title screen + character select.
 import { PALETTE, CHARACTERS, GAME_W, GAME_H } from '../config.js';
 import { TextureFactory } from '../gfx/TextureFactory.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
+import { Storage } from '../systems/Storage.js';
+
+const GAMEPAD_REPEAT_MS = 250;
+const GAMEPAD_DEADZONE = 0.25;
 
 const CHAR_INFO = [
     {
@@ -26,7 +30,7 @@ const CHAR_INFO = [
 ];
 
 const PANEL_CX = [220, 580];
-const PANEL_CY = 340;
+const PANEL_CY = 350;
 const PANEL_W = 240;
 const PANEL_H = 300;
 
@@ -40,26 +44,43 @@ export default class MenuScene extends Phaser.Scene {
         this.selectedIndex = 0;
         this.panels = [];
         this._transitioning = false;
+        this._padNavAt = 0;
+        this._padConfirmAt = 0;
 
-        // ---- Autoplay-policy unlock: first keydown of ANY key arms audio. ----
+        // D4: apply persisted volumes before any sound plays.
+        const s = Storage.getSettings();
+        AudioEngine.setMusicVolume(s.musicVol);
+        AudioEngine.setSfxVolume(s.sfxVol);
+
+        // ---- Autoplay-policy unlock: first keydown OR pointerdown arms audio. ----
         // Registered before any other input listener so it is always present
-        // for the very first key press, whatever that key turns out to be.
+        // for the very first interaction, whatever that turns out to be.
+        // Idempotent: AudioEngine.init()/startMusic() are themselves safe to re-call.
+        this._audioUnlocked = false;
         this._unlockAudio = () => {
+            this._audioUnlocked = true;
             AudioEngine.init();
             AudioEngine.startMusic('menu');
         };
-        this.input.keyboard.once('keydown', () => {
+        const armUnlock = () => {
             this._unlockAudio();
             if (this.hintText) {
                 this.tweens.add({ targets: this.hintText, alpha: 0, duration: 350 });
             }
-        });
+        };
+        this.input.keyboard.once('keydown', armUnlock);
+        this.input.once('pointerdown', armUnlock);
 
         this.buildBackground();
         this.buildTitle();
+        this.buildHighScores();
         this.buildCharacterSelect();
         this.buildHint();
         this.bindInput();
+    }
+
+    update(time) {
+        this.pollGamepad(time);
     }
 
     // ---------------------------------------------------------------- BG --
@@ -183,6 +204,40 @@ export default class MenuScene extends Phaser.Scene {
         });
     }
 
+    // -------------------------------------------------------- HIGH SCORES --
+
+    buildHighScores() {
+        // Compact single-line strip in the slim gap between the title and
+        // the character panels — deliberately no header/box so it never
+        // crowds the layout.
+        const y = 190;
+        let scores = [];
+        try {
+            scores = Storage.getHighScores() || [];
+        } catch (e) {
+            scores = [];
+        }
+
+        if (!scores.length) {
+            this.add.text(GAME_W / 2, y, 'NO RIDES YET', {
+                fontFamily: 'monospace', fontStyle: 'bold', fontSize: '11px', color: '#8a8a94'
+            }).setOrigin(0.5).setDepth(6);
+            return;
+        }
+
+        const parts = scores.slice(0, 5).map((entry, i) => {
+            const rank = i + 1;
+            const scoreStr = String(Math.max(0, Math.floor(entry.score || 0))).padStart(6, '0');
+            const initial = entry.charId === CHARACTERS.DAVE ? 'D' : 'E';
+            const level = entry.endless ? '∞' : `L${entry.level ?? '-'}`;
+            return `#${rank}  ${scoreStr}  ${initial}  ${level}`;
+        });
+
+        this.add.text(GAME_W / 2, y, parts.join('    '), {
+            fontFamily: 'monospace', fontStyle: 'bold', fontSize: '11px', color: '#ffd23c'
+        }).setOrigin(0.5).setDepth(6);
+    }
+
     // -------------------------------------------------------- CHAR SELECT --
 
     buildCharacterSelect() {
@@ -264,8 +319,8 @@ export default class MenuScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-SPACE', () => this.confirmSelection());
     }
 
-    moveSelection(dir) {
-        this._unlockAudio();
+    moveSelection(dir, { unlock = true } = {}) {
+        if (unlock) this._unlockAudio();
         const next = (this.selectedIndex + dir + this.panels.length) % this.panels.length;
         if (next === this.selectedIndex) return;
         this.selectedIndex = next;
@@ -273,15 +328,43 @@ export default class MenuScene extends Phaser.Scene {
         this.updateSelectionVisuals();
     }
 
-    confirmSelection() {
+    confirmSelection({ unlock = true } = {}) {
         if (this._transitioning) return;
         this._transitioning = true;
-        this._unlockAudio();
+        if (unlock) this._unlockAudio();
         AudioEngine.sfx('ui_select');
         const charId = CHAR_INFO[this.selectedIndex].id;
         this.time.delayedCall(120, () => {
             this.scene.start('GameScene', { charId });
             this.scene.launch('UIScene');
         });
+    }
+
+    // ---------------------------------------------------------- GAMEPAD --
+    // D7: dpad/stick left-right selects, A (0) or Start (9) confirms.
+    // Gamepad input is NOT a browser audio-unlock gesture (keydown/pointerdown
+    // handle that) — polling here never calls this._unlockAudio().
+
+    pollGamepad(time) {
+        const gp = this.input.gamepad;
+        if (!gp || gp.total === 0) return;
+        const pad = gp.getPad(0);
+        if (!pad) return;
+
+        const stickX = pad.leftStick ? pad.leftStick.x : 0;
+        const left = pad.left || stickX < -GAMEPAD_DEADZONE;
+        const right = pad.right || stickX > GAMEPAD_DEADZONE;
+
+        if ((left || right) && time - this._padNavAt > GAMEPAD_REPEAT_MS) {
+            this._padNavAt = time;
+            this.moveSelection(left ? -1 : 1, { unlock: false });
+        }
+
+        const confirmBtn = (pad.buttons[0] && pad.buttons[0].pressed) ||
+            (pad.buttons[9] && pad.buttons[9].pressed);
+        if (confirmBtn && time - this._padConfirmAt > GAMEPAD_REPEAT_MS) {
+            this._padConfirmAt = time;
+            this.confirmSelection({ unlock: false });
+        }
     }
 }
