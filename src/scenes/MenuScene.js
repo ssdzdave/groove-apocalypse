@@ -218,24 +218,26 @@ export default class MenuScene extends Phaser.Scene {
             scores = [];
         }
 
+        let label;
         if (!scores.length) {
-            this.add.text(GAME_W / 2, y, 'NO RIDES YET', {
+            label = this.add.text(GAME_W / 2, y, 'NO RIDES YET', {
                 fontFamily: 'monospace', fontStyle: 'bold', fontSize: '11px', color: '#8a8a94'
-            }).setOrigin(0.5).setDepth(6);
-            return;
+            }).setOrigin(0.5).setDepth(7);
+        } else {
+            const parts = scores.slice(0, 5).map((entry, i) => {
+                const rank = i + 1;
+                const scoreStr = String(Math.max(0, Math.floor(entry.score || 0))).padStart(6, '0');
+                const initial = entry.charId === CHARACTERS.DAVE ? 'D' : 'E';
+                const level = entry.endless ? '∞' : `L${entry.level ?? '-'}`;
+                return `#${rank} ${scoreStr} ${initial} ${level}`;
+            });
+            label = this.add.text(GAME_W / 2, y, parts.join('   '), {
+                fontFamily: 'monospace', fontStyle: 'bold', fontSize: '11px', color: '#ffd23c'
+            }).setOrigin(0.5).setDepth(7);
         }
-
-        const parts = scores.slice(0, 5).map((entry, i) => {
-            const rank = i + 1;
-            const scoreStr = String(Math.max(0, Math.floor(entry.score || 0))).padStart(6, '0');
-            const initial = entry.charId === CHARACTERS.DAVE ? 'D' : 'E';
-            const level = entry.endless ? '∞' : `L${entry.level ?? '-'}`;
-            return `#${rank}  ${scoreStr}  ${initial}  ${level}`;
-        });
-
-        this.add.text(GAME_W / 2, y, parts.join('    '), {
-            fontFamily: 'monospace', fontStyle: 'bold', fontSize: '11px', color: '#ffd23c'
-        }).setOrigin(0.5).setDepth(6);
+        // Dark backing so the strip stays legible over the sun/grid art
+        this.add.rectangle(GAME_W / 2, y, label.width + 24, label.height + 8, 0x0d0518, 0.8)
+            .setDepth(6).setStrokeStyle(1, 0x3cf0ff, 0.25);
     }
 
     // -------------------------------------------------------- CHAR SELECT --

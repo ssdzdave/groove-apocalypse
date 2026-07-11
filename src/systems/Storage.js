@@ -92,6 +92,8 @@ export const Storage = {
 
     submitScore(entry) {
         try {
+            // Zero-score runs don't belong on the board
+            if (!entry || !(entry.score > 0)) return { rank: null, isNewHigh: false };
             const list = parseHighScores();
             const newEntry = {
                 score: (entry && typeof entry.score === 'number' && isFinite(entry.score)) ? entry.score : 0,

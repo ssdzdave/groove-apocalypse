@@ -129,6 +129,13 @@ export default class GameScene extends Phaser.Scene {
             this.game.events.emit(EVT.VINYLS, this._vinylsCollected, this._vinylsNeeded);
             this.game.events.emit(EVT.PLAYER_HP, this.player.hp, this.player.maxHp);
             if (this.boss && this.boss.active) this.game.events.emit(EVT.BOSS_HP, this.boss.hp, this.boss.maxHp);
+            // Endless carry: sync the HUD score readout without an award
+            if (this.score && this.score.score > 0) {
+                this.game.events.emit(EVT.SCORE, {
+                    score: this.score.score, delta: 0, combo: 0, comboMult: 1,
+                    reason: 'carry', x: 0, y: 0, onBeat: false
+                });
+            }
         });
     }
 
