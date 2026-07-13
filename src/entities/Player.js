@@ -122,7 +122,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const baseAngle = Math.atan2(fy, fx);
 
         // D1: poll the audio clock at the moment of the shot — never EVT.BEAT.
-        const onBeat = pollOnBeat();
+        const onBeat = (scene.debug && scene.debug.goldenEar) || pollOnBeat();
 
         const shootKey = this.charId + '-shoot';
         if (scene.anims.exists(shootKey)) {
@@ -159,7 +159,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (this._specialCharging || time - this._lastSpecial < gate) return;
 
         // D1: poll at press — an on-beat activation shortens THIS cycle's cooldown.
-        const onBeat = pollOnBeat();
+        const onBeat = (this.scene.debug && this.scene.debug.goldenEar) || pollOnBeat();
         const cooldown = onBeat ? SPECIAL_COOLDOWN_ONBEAT_MS : SPECIAL_COOLDOWN_MS;
         this._nextSpecialCooldownMs = cooldown;
 
@@ -260,6 +260,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     damage(n) {
+        if (this.debugInvincible) return;
         if (this.isInvincible) return;
         const scene = this.scene;
         const time = scene.time.now;

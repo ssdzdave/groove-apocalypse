@@ -381,3 +381,11 @@ export const Storage = {
 | systems/ScoreSystem.js, systems/Storage.js | F |
 
 Untouched by everyone: DroneBot.js, Pickups.js, SilentSheriff.js, LevelGenerator.js, WorldBuilder.js, Juice.js, index.html, main.js, config.js.
+
+---
+
+## Appendix: Debug mode seam (added post-Phase-3)
+
+- `DebugScene` (scenes/DebugScene.js) is an overlay toggled by BACKTICK from GameScene's update; the game keeps running. It drives GameScene's `debug*` methods: `debugToggleInvincible`, `debugCycleSpeed` (×1→×2→×4→×0.5; Arcade `world.timeScale` is INVERSE, Clock/tweens/anims are direct), `debugToggleGoldenEar` (all shots/specials count as on-beat), `debugHeal`, `debugKillAll`, `debugGotoLevel(n)`, plus existing `debugSkipLevel`/`debugTeleport`.
+- GameScene owns `this.debug = { invincible, speed, goldenEar }` (reset each create; speed reset + DebugScene stopped on shutdown so nothing leaks into the menu). `Player.damage` checks `player.debugInvincible` first; `Player` on-beat polls check `scene.debug.goldenEar` first. `getDebugState()` includes the `debug` object.
+- Future workstreams must not bind gameplay keys to I/T/G/H/K/B/=/−/1-9 while DebugScene may be open, and must keep `debug*` method names stable (they are test-harness API).

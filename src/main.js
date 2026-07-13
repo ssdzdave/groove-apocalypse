@@ -4,6 +4,7 @@ import MenuScene from './scenes/MenuScene.js';
 import GameScene from './scenes/GameScene.js';
 import UIScene from './scenes/UIScene.js';
 import PauseScene from './scenes/PauseScene.js';
+import DebugScene from './scenes/DebugScene.js';
 import GameOverScene from './scenes/GameOverScene.js';
 
 const config = {
@@ -21,7 +22,7 @@ const config = {
             debug: false
         }
     },
-    scene: [MenuScene, GameScene, UIScene, PauseScene, GameOverScene]
+    scene: [MenuScene, GameScene, UIScene, PauseScene, DebugScene, GameOverScene]
 };
 
 window.__game = new Phaser.Game(config);

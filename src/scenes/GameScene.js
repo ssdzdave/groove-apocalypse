@@ -55,6 +55,8 @@ export default class GameScene extends Phaser.Scene {
         this._beatListener = null;
         this._prevPadSpecial = false;
         this._prevPadStart = false;
+        this.debug = { invincible: false, speed: 1, goldenEar: false };
+        this._applyDebugSpeed(1);
 
         this.keys = {
             up: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
@@ -68,7 +70,8 @@ export default class GameScene extends Phaser.Scene {
             space: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
             E: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E),
             esc: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC),
-            P: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P)
+            P: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P),
+            backtick: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.BACKTICK)
         };
 
         this.physics.world.setBounds(0, 0, GRID_W * TILE, GRID_H * TILE);
@@ -591,6 +594,8 @@ export default class GameScene extends Phaser.Scene {
             this._prevPadStart = padStart;
         }
 
+        if (Phaser.Input.Keyboard.JustDown(this.keys.backtick)) this._toggleDebugPanel();
+
         if (this.boss && this.boss.active) this.boss.update(time, delta);
 
         if (this.player && this.silencePools) {
@@ -666,8 +671,69 @@ export default class GameScene extends Phaser.Scene {
             score: this.score ? this.score.score : 0,
             combo: this.score ? this.score.combo : 0,
             endless: this.endless,
-            paused: this.scene.isPaused()
+            paused: this.scene.isPaused(),
+            debug: { invincible: this.debug.invincible, speed: this.debug.speed, goldenEar: this.debug.goldenEar }
         };
+    }
+
+    // ------------------------------------------------------- debug mode (backtick)
+
+    _toggleDebugPanel() {
+        if (this.scene.isActive('DebugScene')) this.scene.stop('DebugScene');
+        else this.scene.launch('DebugScene');
+    }
+
+    debugToggleInvincible() {
+        this.debug.invincible = !this.debug.invincible;
+        if (this.player) {
+            this.player.debugInvincible = this.debug.invincible;
+            this.player.setAlpha(this.debug.invincible ? 0.8 : 1);
+        }
+        return this.debug.invincible;
+    }
+
+    debugToggleGoldenEar() {
+        this.debug.goldenEar = !this.debug.goldenEar;
+        return this.debug.goldenEar;
+    }
+
+    // Cycle x1 -> x2 -> x4 -> x0.5 -> x1. Arcade world.timeScale is INVERSE
+    // (0.5 = double speed); Clock/anims timeScale are direct.
+    debugCycleSpeed() {
+        const order = [1, 2, 4, 0.5];
+        const next = order[(order.indexOf(this.debug.speed) + 1) % order.length];
+        this._applyDebugSpeed(next);
+        return next;
+    }
+
+    _applyDebugSpeed(mult) {
+        this.debug.speed = mult;
+        this.time.timeScale = mult;
+        this.tweens.timeScale = mult;
+        this.anims.globalTimeScale = mult;
+        if (this.physics && this.physics.world) this.physics.world.timeScale = 1 / mult;
+    }
+
+    debugHeal() {
+        if (this.player) this.player.heal(this.player.maxHp);
+    }
+
+    debugKillAll() {
+        this.zomboids.getChildren().forEach((z) => { if (z.active && !z.converted) z.convert(); });
+        this.golems.getChildren().forEach((g) => { if (g.active && !g.converted) g.convert(); });
+        this.phantoms.getChildren().forEach((p) => { if (p.active && !p.converted) { p.phased = false; p.convert(); } });
+        this.droneBots.getChildren().forEach((d) => {
+            if (!d.active) return;
+            if (typeof d.hit === 'function') d.hit(); else d.destroy();
+        });
+        if (this.boss && this.boss.active) this.boss.onSpecialHit();
+    }
+
+    debugGotoLevel(n) {
+        if (n < 1) return;
+        this._applyDebugSpeed(this.debug.speed); // keep speed across level swap
+        this.startLevel(n);
+        if (this.player && this.debug.invincible) this.player.debugInvincible = true;
     }
 
     debugTeleport(tx, ty) {
@@ -709,5 +775,8 @@ export default class GameScene extends Phaser.Scene {
             this.score.destroy();
             this.score = null;
         }
+        // Debug speed must not leak into the menu (anims.globalTimeScale is global)
+        this._applyDebugSpeed(1);
+        if (this.scene.isActive('DebugScene')) this.scene.stop('DebugScene');
     }
 }
