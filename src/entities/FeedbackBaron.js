@@ -34,6 +34,9 @@ export default class FeedbackBaron extends Phaser.Physics.Arcade.Sprite {
             this.body.setSize(BODY_SIZE, BODY_SIZE);
             this.body.setOffset(offset, offset);
             this.body.setImmovable(true);
+            // Immovable bodies aren't pushed back by wall colliders — clamp to
+            // world bounds so the boss can't drift into the border walls.
+            this.body.setCollideWorldBounds(true);
         }
 
         this.setDepth(DEPTH.enemies);

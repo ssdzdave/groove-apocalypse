@@ -1,5 +1,6 @@
 import { GAME_W, GAME_H, EVT } from './config.js';
 import { AudioEngine } from './audio/AudioEngine.js';
+import { CrashReporter } from './systems/CrashReporter.js';
 import MenuScene from './scenes/MenuScene.js';
 import GameScene from './scenes/GameScene.js';
 import UIScene from './scenes/UIScene.js';
@@ -30,3 +31,6 @@ window.__game = new Phaser.Game(config);
 // Bridge audio-clock beats onto the game event bus. EVT.BEAT drives visuals
 // only — the on-beat shot bonus polls AudioEngine.getBeatInfo() directly.
 AudioEngine.onBeat((info) => window.__game.events.emit(EVT.BEAT, info));
+
+// Uncaught errors -> copyable crash report overlay (works even if the game loop dies)
+CrashReporter.install(window.__game);

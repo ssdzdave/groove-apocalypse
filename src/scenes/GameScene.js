@@ -231,7 +231,12 @@ export default class GameScene extends Phaser.Scene {
             const BossClass = bossId === BOSS_IDS.BARON ? FeedbackBaron : SilentSheriff;
             this.boss = new BossClass(this, bx, by);
             this.physics.add.collider(this.boss, world.wallsGroup);
-            const bossOverlap = this.physics.add.overlap(this.playerProjectiles, this.boss, (proj, boss) => {
+            // Phaser can deliver group-vs-sprite overlap args in either order —
+            // resolve by capability, not position (this crashed the Sheriff fight).
+            const bossOverlap = this.physics.add.overlap(this.playerProjectiles, this.boss, (a, b) => {
+                const boss = typeof a.onProjectileHit === 'function' ? a : b;
+                const proj = boss === a ? b : a;
+                if (!boss || typeof boss.onProjectileHit !== 'function' || !boss.active) return;
                 if (boss.stunned) boss.onSpecialHit();
                 else boss.onProjectileHit(proj);
             });

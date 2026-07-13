@@ -56,6 +56,8 @@ export const DEPTH = {
 // ======================= PHASE 3 additions ==========================
 // Everything above this line is still frozen. Appends only below.
 
+export const GAME_VERSION = '0.3.1'; // bump when shipping a new zip to itch.io
+
 export const BOSS_IDS = { SHERIFF: 'sheriff', BARON: 'baron' };
 // Boss cycle: k = n/3; odd k -> Sheriff (L3, L9, ...), even k -> Baron (L6, L12, ...)
 export const bossForLevel = (n) => (Math.floor(n / 3) % 2 === 1 ? BOSS_IDS.SHERIFF : BOSS_IDS.BARON);
