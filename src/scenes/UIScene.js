@@ -166,7 +166,10 @@ export default class UIScene extends Phaser.Scene {
             const warn = this.add.text(GAME_W / 2, 246, this._bossName, {
                 fontFamily: 'monospace', fontStyle: 'bold', fontSize: '18px', color: '#ff3c3c'
             }).setOrigin(0.5).setAlpha(0).setDepth(60);
-            items.push(warn);
+            const hint = this.add.text(GAME_W / 2, 272, 'ONLY YOUR SPECIAL [E] CAN HURT HIM', {
+                fontFamily: 'monospace', fontStyle: 'bold', fontSize: '13px', color: '#ffd23c'
+            }).setOrigin(0.5).setAlpha(0).setDepth(60);
+            items.push(warn, hint);
         }
 
         this.levelBannerGroup = items;
@@ -175,7 +178,7 @@ export default class UIScene extends Phaser.Scene {
             alpha: { from: 0, to: 1 },
             duration: 350,
             yoyo: true,
-            hold: 1300,
+            hold: isBoss ? 2600 : 1300,
             onComplete: () => {
                 items.forEach((o) => o.destroy());
                 if (this.levelBannerGroup === items) this.levelBannerGroup = [];

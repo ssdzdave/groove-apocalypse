@@ -9,6 +9,7 @@ const SPECIAL_COOLDOWN_MS = 3000;
 const SPECIAL_COOLDOWN_ONBEAT_MS = 2000; // D1: on-beat special press shortens THIS cycle's cooldown
 const MERCY_MS = 800;
 const SLIDE_RADIUS = 110;
+const SLIDE_BOSS_RADIUS = 140; // more forgiving reach vs the 64px boss
 const SILENCE_SPEED_MULT = 0.5;
 const SILENCE_TINT = 0x5c7a99; // gray-blue
 const SILENCE_CLICK_INTERVAL_MS = 1000;
@@ -221,7 +222,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
         if (scene.boss && scene.boss.active) {
             const d = Phaser.Math.Distance.Between(this.x, this.y, scene.boss.x, scene.boss.y);
-            if (d <= SLIDE_RADIUS) scene.boss.onSpecialHit();
+            if (d <= SLIDE_BOSS_RADIUS) scene.boss.onSpecialHit();
         }
 
         AudioEngine.sfx('slide');

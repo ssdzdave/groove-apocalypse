@@ -236,6 +236,12 @@ export default class FeedbackBaron extends Phaser.Physics.Arcade.Sprite {
         if (this.dead || this.stunned) return;
 
         Juice.hitFlash(this, PALETTE.gray);
+        // Tell the player WHY nothing happened (throttled to 1/s)
+        const now = this.scene && this.scene.time ? this.scene.time.now : 0;
+        if (!this._lastImmuneText || now - this._lastImmuneText > 1000) {
+            this._lastImmuneText = now;
+            Juice.floatText(this.scene, this.x, this.y - 40, 'IMMUNE!', PALETTE.gray);
+        }
 
         const piercing = !!(proj && proj.piercing);
         if (!piercing && proj) {
@@ -248,6 +254,11 @@ export default class FeedbackBaron extends Phaser.Physics.Arcade.Sprite {
     // Routed here by GameScene's collider only while stunned (special-attack damage).
     onSpecialHit() {
         if (this.dead) return;
+        // Brief cooldown so a piercing shot through a stunned boss lands once,
+        // not once per overlapping physics frame.
+        const nowT = this.scene && this.scene.time ? this.scene.time.now : 0;
+        if (this._lastSpecialHitAt && nowT - this._lastSpecialHitAt < 250) return;
+        this._lastSpecialHitAt = nowT;
 
         const scene = this.scene;
         const now = scene && scene.time ? scene.time.now : 0;
