@@ -15,6 +15,11 @@ const config = {
     parent: 'game-container',
     pixelArt: true,
     backgroundColor: '#0d0518',
+    // Scale to whatever viewport hosts us (itch.io iframes vary) instead of clipping
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+    },
     input: { gamepad: true },
     physics: {
         default: 'arcade',
